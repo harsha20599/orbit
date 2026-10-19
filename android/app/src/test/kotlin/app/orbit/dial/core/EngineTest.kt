@@ -198,15 +198,26 @@ class EngineTest {
         assertEquals(listOf("vol:-1"), log)
     }
 
-    @Test fun controllerMenuOpensWheelNextMovesSelectPicks() {
+    @Test fun configurationOpensWheelMovesAndSelects() {
         val e = engine()
-        val hub = ControllerHub { e.handle(it) }
-        hub.set(listOf(Controller("r", "Remote", "d", Controller.layout(listOf(1 to "A", 2 to "B")))))
-        hub.onKey("d", 2, true, now); now += ButtonRecognizer.HOLD_MS; hub.tick(now); hub.onKey("d", 2, false, now)
+        val hub = ConfigHub { e.handle(it) }
+        hub.set(listOf(Config.keys("r", "Remote", "d", listOf(Input("key:1", "A"), Input("key:2", "B")))))
+        // defaults for 2 buttons: B hold = open, A tap = forward, A hold = select
+        hub.onKey("d", "key:2", true, now); now += PressRecognizer.HOLD_MS; hub.tick(now); hub.onKey("d", "key:2", false, now)
         assertEquals(Engine.State.WHEEL, e.state)
-        hub.onKey("d", 1, true, now); now += 60; hub.onKey("d", 1, false, now)        // tap A: next item
-        hub.onKey("d", 1, true, now); now += ButtonRecognizer.HOLD_MS; hub.tick(now)    // hold A: select
+        hub.onKey("d", "key:1", true, now); now += 60; hub.onKey("d", "key:1", false, now)
+        hub.onKey("d", "key:1", true, now); now += PressRecognizer.HOLD_MS; hub.tick(now)
         assertEquals(Engine.State.TOOL, e.state)
         assertEquals(e.wheel[1].id, e.tool.id)
+    }
+
+    @Test fun boundActionsRunWhateverTheOldGestureSettingsSay() {
+        val e = engine()
+        e.handle(DialEvent(Kind.CLICK, 0, CONTROLLER + "x", now, "global:home"))
+        e.handle(DialEvent(Kind.CLICK, 0, CONTROLLER + "x", now, OrbitActions.OPEN))
+        assertEquals(Engine.State.WHEEL, e.state)
+        e.handle(DialEvent(Kind.CLICK, 0, CONTROLLER + "x", now, OrbitActions.OPEN))
+        assertEquals(Engine.State.TOOL, e.state)
+        assertTrue("global:home" in log)
     }
 }

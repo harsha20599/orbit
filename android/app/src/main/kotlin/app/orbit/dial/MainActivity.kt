@@ -74,23 +74,27 @@ val OrbitColors = darkColorScheme(
 /** The app: Orbit's switch, setup (collapsed when done), the wheel and gestures, help. */
 class MainActivity : ComponentActivity() {
     private var refresh by mutableIntStateOf(0)
-    private var adding by mutableStateOf(false)
+    /** null = home, "add", or "edit:<config id>:<adding buttons>" */
+    private var screen by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyDebugExtras(intent)
         setContent {
             MaterialTheme(colorScheme = OrbitColors) {
-                if (adding) {
-                    BackHandler { adding = false }
-                    AddControllerScreen(a11yOn(), Orbit.enabled(this), onSetUpA11y = {
-                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    }) { saved ->
-                        adding = false; refresh++
-                        if (saved) android.widget.Toast.makeText(this, "Saved. Your controller drives Orbit now.",
-                            android.widget.Toast.LENGTH_SHORT).show()
+                when (val sc = screen) {
+                    null -> Home(refresh)
+                    "add" -> {
+                        BackHandler { screen = null }
+                        AddControllerScreen(a11yOn(), onSetUpA11y = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
+                            onOpen = { id, add -> screen = "edit:$id:$add" }, onClose = { screen = null })
                     }
-                } else Home(refresh)
+                    else -> {
+                        val (_, id, add) = sc.split(":", limit = 3).let { Triple(it[0], it[1], it.getOrNull(2) == "true") }
+                        BackHandler { screen = null; refresh++ }
+                        androidx.compose.runtime.key(id) { ConfigScreen(id, add) { screen = null; refresh++ } }
+                    }
+                }
             }
         }
     }
@@ -139,7 +143,7 @@ class MainActivity : ComponentActivity() {
             top = {
                 item { OnOffCard() }
                 item { SetupCard { disclosure = true } }
-                controllersSection(refresh, onAdd = { adding = true }, onChanged = { refresh++ })
+                controllersSection(refresh, onOpen = { screen = "edit:$it:false" }, onAdd = { screen = "add" }, onChanged = { refresh++ })
             },
             bottom = {
                 item { Section("Help", "Something not working? These usually sort it out.") }

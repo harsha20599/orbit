@@ -48,7 +48,24 @@ class Engine(
     init { sync() }
 
     fun handle(ev: DialEvent) {
+        val a = ev.action
+        if (a != null && a != OrbitActions.SELECT) return perform(a)
         if (state == State.WHEEL) wheelEvent(ev) else toolEvent(ev)
+    }
+
+    /** An action a configuration bound to a button (moves arrive as turns, select as a press). */
+    private fun perform(a: String) {
+        if (a == OrbitActions.OPEN) { if (state == State.WHEEL) cancel() else openWheel(); return }
+        if (state == State.WHEEL) { cancel(); return }
+        when (val g = OrbitSettings.parseGesture(a)) {
+            is Gesture.Media -> actions.media(g.command)
+            is Gesture.Launch -> actions.launch(g.pkg)
+            is Gesture.Global -> actions.global(g.action)
+            Gesture.LastTool -> lastTool()
+            is Gesture.SwitchTo -> setTool(g.toolId)
+            Gesture.OpenWheel -> openWheel()
+            null -> {}
+        }
     }
 
     fun tick(now: Long = Clock.now()) {
@@ -95,7 +112,7 @@ class Engine(
             tool.rotate(actions, ev.delta)?.let(ui::hud)
             return
         }
-        if (ev.kind in openWith) { openWheel(); return }
+        if (ev.action == null && ev.kind in openWith) { openWheel(); return }
         if (tool.gesture(actions, ev.kind)) { if (!tool.quietHud) ui.hud(tool.hud(actions, 0)); return }
         when (val g = globalGestures[ev.kind]) {
             is Gesture.Media -> actions.media(g.command)

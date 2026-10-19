@@ -15,7 +15,7 @@ import app.orbit.dial.core.Kind
 class HoldTrampolineActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Orbit.emit(DialEvent(Kind.HOLD, 0, "voice-command"))
+        Orbit.pulse(app.orbit.dial.core.Config.HEADPHONES, app.orbit.dial.core.Presets.HOLD, "Press and hold")
         finish()
         if (Build.VERSION.SDK_INT >= 34) overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
         else @Suppress("DEPRECATION") overridePendingTransition(0, 0)

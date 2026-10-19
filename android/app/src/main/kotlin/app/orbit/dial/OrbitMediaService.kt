@@ -25,6 +25,7 @@ import android.os.Looper
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 import app.orbit.dial.core.Clock
+import app.orbit.dial.core.Config
 import app.orbit.dial.core.DialEvent
 import app.orbit.dial.core.Kind
 import app.orbit.dial.core.VolumeDial
@@ -80,7 +81,7 @@ class OrbitMediaService : Service() {
         val o = ourSet
         val ours = o != null && o.first == idx && Clock.now() - o.second < 700
         Orbit.log("vol $idx/$max${if (ours) " (ours)" else ""}")
-        if (!ours && (Orbit.phoneKeyRecently() || !dialOutputActive())) {
+        if (!ours && (Orbit.phoneKeyRecently() || !dialOutputActive() || (!Orbit.volumeIsDial && !Orbit.capturing()))) {
             dial.onLevel(idx.toFloat() / max, ours = true)        // not the dial: just track it
             return
         }
@@ -99,7 +100,10 @@ class OrbitMediaService : Service() {
                 ourSet = idx to Clock.now()
                 am.setStreamVolume(stream, idx, 0)
             }
-        }, { ev -> main.post { Orbit.emit(ev) } }, "android-volume",
+        }, { ev -> main.post {
+                Orbit.pulse(Config.HEADPHONES, if (ev.delta > 0) app.orbit.dial.core.Presets.UP else app.orbit.dial.core.Presets.DOWN,
+                    if (ev.delta > 0) "Volume up / turn forward" else "Volume down / turn back", kotlin.math.abs(ev.delta), ev.source)
+            } }, "android-volume",
             streamSteps = am.getStreamMaxVolume(stream).coerceAtLeast(1))
         dial.rebase()
         Orbit.media = this
@@ -168,17 +172,16 @@ class OrbitMediaService : Service() {
         }
     }
 
-    // Wired earphone remotes: one button, HEADSETHOOK for every press; we count them.
-    private val hook = app.orbit.dial.core.TapCounter { k -> press(k, "headset button") }
-    private val hookTick = Runnable { hook.tick(Clock.now()); scheduleHook() }
-    private fun scheduleHook() {
-        main.removeCallbacks(hookTick)
-        hook.nextWake()?.let { main.postDelayed(hookTick, (it - Clock.now()).coerceIn(0, 2000)) }
-    }
+    // Wired earphone remotes: one button, HEADSETHOOK for every press; the headphones
+    // configuration counts taps / holds on it like any key.
     private fun hookKey(ev: KeyEvent) {
-        if (Orbit.capturing()) { if (ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0) press(Kind.CLICK, "headset button"); return }
-        if (ev.action == KeyEvent.ACTION_DOWN) hook.down(Clock.now()) else if (ev.action == KeyEvent.ACTION_UP) hook.up(Clock.now())
-        scheduleHook()
+        val down = ev.action == KeyEvent.ACTION_DOWN
+        if (down && ev.repeatCount > 0) return
+        if (Orbit.capturing()) {
+            Orbit.capture(Orbit.Captured(app.orbit.dial.core.Presets.HOOK, down, Config.HEADPHONES, "Earbuds & headphones", "Cable button"))
+            return
+        }
+        Orbit.key(Config.HEADPHONES, app.orbit.dial.core.Presets.HOOK, down)
     }
 
     private var lastPressAt = 0L
@@ -189,13 +192,13 @@ class OrbitMediaService : Service() {
         val now = Clock.now()
         if (kind == lastPressKind && now - lastPressAt < 150) return
         lastPressAt = now; lastPressKind = kind
-        if (Orbit.capturing()) {
-            val label = when (kind) { Kind.CLICK -> "Play / pause"; Kind.DOUBLE -> "Next track"; Kind.HOLD -> "Hold"; else -> "Previous track" }
-            Orbit.capture(Orbit.Captured(-1, true, "media", "Headphones / speaker", label, media = true))
-            return
-        }
         Orbit.log("press: $how")
-        Orbit.emit(DialEvent(kind, 0, "media-session"))
+        val (input, label) = when (kind) {
+            Kind.DOUBLE -> app.orbit.dial.core.Presets.NEXT to "Double press / next track"
+            Kind.TRIPLE -> app.orbit.dial.core.Presets.PREV to "Triple press / previous track"
+            else -> app.orbit.dial.core.Presets.PLAY to "Press / play-pause"
+        }
+        Orbit.pulse(Config.HEADPHONES, input, label)
     }
 
     private fun startSilence() {

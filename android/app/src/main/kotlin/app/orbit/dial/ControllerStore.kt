@@ -4,67 +4,72 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.view.InputDevice
 import android.view.KeyEvent
-import app.orbit.dial.core.Act
-import app.orbit.dial.core.Button
-import app.orbit.dial.core.Controller
+import app.orbit.dial.core.Binding
+import app.orbit.dial.core.Config
+import app.orbit.dial.core.Input
+import app.orbit.dial.core.Press
+import app.orbit.dial.core.Trigger
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** The user's controllers, as JSON in Orbit's prefs. The accessibility service listens. */
+/**
+ * The user's configurations, as JSON in Orbit's prefs. There's always an "Earbuds &
+ * headphones" one (from a preset); the rest are the user's own. The accessibility
+ * service listens and reloads Orbit's hub.
+ */
 object ControllerStore {
-    const val KEY = "controllers"
+    const val KEY = "configs"
 
-    fun load(ctx: Context): List<Controller> = runCatching {
-        val a = JSONArray(Orbit.prefs(ctx).getString(KEY, "[]"))
-        (0 until a.length()).map { i ->
-            val o = a.getJSONObject(i)
-            val bs = o.getJSONArray("buttons")
-            Controller(
-                id = o.getString("id"),
-                name = o.getString("name"),
-                device = o.optString("device").ifEmpty { null },
-                enabled = o.optBoolean("enabled", true),
-                buttons = (0 until bs.length()).map { j ->
-                    val b = bs.getJSONObject(j)
-                    Button(b.getInt("key"), b.getString("label"), Act.valueOf(b.getString("tap")),
-                        Act.valueOf(b.optString("hold", "NONE")), Act.valueOf(b.optString("long", "NONE")),
-                        b.optBoolean("repeat"))
-                },
-            )
-        }
-    }.getOrElse { Orbit.log("controllers unreadable, ignored: ${it.message}"); emptyList() }
+    fun load(ctx: Context): List<Config> {
+        val list = runCatching {
+            val a = JSONArray(Orbit.prefs(ctx).getString(KEY, "[]"))
+            (0 until a.length()).map { i -> fromJson(a.getJSONObject(i)) }
+        }.getOrElse { Orbit.log("configurations unreadable, reset: ${it.message}"); emptyList() }
+        return if (list.any { it.isHeadphones }) list.sortedBy { if (it.isHeadphones) 0 else 1 }
+        else listOf(Config.headphones()) + list
+    }
 
-    fun save(ctx: Context, list: List<Controller>) {
+    fun save(ctx: Context, list: List<Config>) {
         val a = JSONArray()
-        list.forEach { c ->
-            a.put(JSONObject().apply {
-                put("id", c.id); put("name", c.name); put("device", c.device ?: ""); put("enabled", c.enabled)
-                put("buttons", JSONArray().apply {
-                    c.buttons.forEach { b ->
-                        put(JSONObject().apply {
-                            put("key", b.key); put("label", b.label); put("tap", b.tap.name)
-                            put("hold", b.hold.name); put("long", b.longHold.name); put("repeat", b.repeat)
-                        })
-                    }
-                })
-            })
-        }
+        list.forEach { a.put(toJson(it)) }
         Orbit.prefs(ctx).edit().putString(KEY, a.toString()).apply()
     }
 
-    fun upsert(ctx: Context, c: Controller) {
-        val l = load(ctx).filterNot { it.id == c.id || (c.device != null && it.device == c.device) }
-        save(ctx, l + c)
+    fun get(ctx: Context, id: String) = load(ctx).firstOrNull { it.id == id }
+    fun put(ctx: Context, c: Config) {
+        val l = load(ctx)
+        save(ctx, if (l.any { it.id == c.id }) l.map { if (it.id == c.id) c else it } else l + c)
     }
-
-    fun remove(ctx: Context, id: String) = save(ctx, load(ctx).filterNot { it.id == id })
-    fun setEnabled(ctx: Context, id: String, on: Boolean) =
-        save(ctx, load(ctx).map { if (it.id == id) it.copy(enabled = on) else it })
+    fun remove(ctx: Context, id: String) = save(ctx, load(ctx).filterNot { it.id == id && !it.isHeadphones })
 
     fun listen(ctx: Context, onChange: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener {
         val l = SharedPreferences.OnSharedPreferenceChangeListener { _, k -> if (k == KEY || k == "enabled") onChange() }
         Orbit.prefs(ctx).registerOnSharedPreferenceChangeListener(l)
         return l
+    }
+
+    private fun toJson(c: Config) = JSONObject().apply {
+        put("id", c.id); put("name", c.name); put("device", c.device ?: ""); put("enabled", c.enabled)
+        put("preset", c.preset ?: "")
+        put("inputs", JSONArray().apply { c.inputs.forEach { put(JSONObject().put("id", it.id).put("label", it.label).put("counted", it.counted)) } })
+        put("bindings", JSONArray().apply {
+            c.bindings.forEach { put(JSONObject().put("action", it.action).put("input", it.trigger.input).put("press", it.trigger.press.name)) }
+        })
+    }
+
+    private fun fromJson(o: JSONObject): Config {
+        val ins = o.getJSONArray("inputs")
+        val bs = o.getJSONArray("bindings")
+        return Config(
+            id = o.getString("id"), name = o.getString("name"),
+            device = o.optString("device").ifEmpty { null }, enabled = o.optBoolean("enabled", true),
+            preset = o.optString("preset").ifEmpty { null },
+            inputs = (0 until ins.length()).map { ins.getJSONObject(it).let { j -> Input(j.getString("id"), j.getString("label"), j.optBoolean("counted")) } },
+            bindings = (0 until bs.length()).mapNotNull { i ->
+                val j = bs.getJSONObject(i)
+                runCatching { Binding(j.getString("action"), Trigger(j.getString("input"), Press.valueOf(j.getString("press")))) }.getOrNull()
+            },
+        )
     }
 
     // ---------------------------------------------------------------- naming
@@ -101,7 +106,11 @@ object ControllerStore {
         else -> d.name.ifBlank { "Bluetooth remote" }
     }
 
-    fun deviceId(d: InputDevice?): String? = if (d == null || d.id < 0 || d.isVirtual) "virtual" else d.descriptor
+    fun deviceId(d: InputDevice?): String = when {
+        d == null || d.id < 0 || d.isVirtual -> "virtual"
+        !isExternal(d) -> Config.BUILTIN
+        else -> d.descriptor
+    }
 
     private fun isExternal(d: InputDevice) =
         if (android.os.Build.VERSION.SDK_INT >= 29) d.isExternal else !d.name.contains("gpio", true)

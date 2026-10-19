@@ -155,9 +155,7 @@ fun CustomizeScreen(
             item {
                 WheelPreview(wheel, s.defaultTool, rememberOverlayLook(s.appearance))
                 Text(
-                    (if (opens.isEmpty()) "Open it with a triple press." else
-                        "Open it with a " + opens.joinToString(" or ") { GESTURE_NAMES.getValue(it).lowercase() } + ".") +
-                        " Turn to pick, press to choose.",
+                    "Open it, move to a tool, select it. Which buttons do that is up to you: see Controllers.",
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 4.dp),
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -193,22 +191,13 @@ fun CustomizeScreen(
                     }
                 }
             }
-            item { Section("Dial", "What the dial does when the wheel is closed.") }
+            item { Section("Start", "The tool Orbit starts on, before you pick one from the wheel.") }
             item {
                 Group {
                     PickerRow({ Icon(painterResource(R.drawable.ic_star), null, Modifier.size(20.dp)) },
                         "Start with", byId[s.defaultTool]?.label ?: s.defaultTool,
                         all.filter { it.sticky }.map { it.label to it.id }, s.defaultTool) { update(s.copy(defaultTool = it)) }
-                    OrbitSettings.GESTURES.forEach { k ->
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                        val v = s.gestures.getValue(k)
-                        PickerRow({ Pips(k) }, GESTURE_NAMES.getValue(k), nameOf(v), options,
-                            if (v.startsWith(OPEN_APP) && v != "launch:com.anthropic.claude") OPEN_APP else v) {
-                            if (it == OPEN_APP) pickingFor = k else update(s.copy(gestures = s.gestures + (k to it)))
-                        }
-                    }
                 }
-                if (opens.isEmpty()) Hint("No gesture opens the wheel, so a triple press will.", warn = true)
             }
             bottom()
         }
@@ -370,7 +359,7 @@ private fun WheelPreview(items: List<Tool>, start: String, look: OverlayLook) {
 
 /** Every app with a launcher icon, A to Z. */
 @Composable
-private fun AppPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
+internal fun AppPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
     val ctx = LocalContext.current
     val apps = remember {
         val pm = ctx.packageManager

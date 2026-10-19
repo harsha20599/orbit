@@ -36,6 +36,42 @@
 
         <!-- Press-and-hold on the dial: the buds send HFP AT+BVRA=1 and Android's
              Bluetooth stack starts VOICE_COMMAND. Choose Orbit -> "Always" once. -->
+        <!-- Back tap: Pixel Quick Tap / Samsung RegiStar can only "open an app", so each
+             of these is an invisible app entry that presses an Orbit button and vanishes.
+             Off (not in the app drawer) until the user adds the Back of the phone setup. -->
+        <activity
+            android:name=".BackTapActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <activity-alias
+            android:name=".BackTap1"
+            android:targetActivity=".BackTapActivity"
+            android:label="Orbit back tap"
+            android:icon="@mipmap/ic_launcher"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".BackTap2"
+            android:targetActivity=".BackTapActivity"
+            android:label="Orbit back tap 2"
+            android:icon="@mipmap/ic_launcher"
+            android:enabled="false"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
         <activity
             android:name=".HoldTrampolineActivity"
             android:exported="true"

@@ -76,8 +76,8 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         prefsListener = SettingsStore.listen(this) {
             main.removeCallbacks(rebuild); main.postDelayed(rebuild, 150)          // one rebuild per save
         }
-        loadControls()
-        controlsListener = ControllerStore.listen(this) { main.post { loadControls() } }
+        Orbit.reloadConfigs(this)
+        controlsListener = ControllerStore.listen(this) { main.post { Orbit.reloadConfigs(this) } }
         scope.launch { Orbit.events.collect { ev -> engine.handle(ev) } }
         main.post(ticker)
         if (BuildConfig.DEBUG) registerDebugInjector()
@@ -106,7 +106,6 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
     override fun onDestroy() {
         prefsListener?.let { Orbit.prefs(this).unregisterOnSharedPreferenceChangeListener(it) }
         controlsListener?.let { Orbit.prefs(this).unregisterOnSharedPreferenceChangeListener(it) }
-        main.removeCallbacks(controlsTick)
         main.removeCallbacks(rebuild)
         debugRx?.let { runCatching { unregisterReceiver(it) } }
         main.removeCallbacks(ticker)
@@ -139,34 +138,18 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         val dev = event.device
         if (Orbit.capturing()) {
             if (!down || event.repeatCount == 0)
-                Orbit.capture(Orbit.Captured(code, down, ControllerStore.deviceId(dev), ControllerStore.deviceName(dev),
+                Orbit.capture(Orbit.Captured("key:$code", down, ControllerStore.deviceId(dev), ControllerStore.deviceName(dev),
                     ControllerStore.keyLabel(code), typing = dev?.keyboardType == android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC))
             return true
         }
-        if (Orbit.enabled(this) && controls.onKey(ControllerStore.deviceId(dev), code, down, Clock.now())) {
-            scheduleControls()
-            return true
-        }
+        if (Orbit.enabled(this) && Orbit.key(ControllerStore.deviceId(dev), "key:$code", down)) return true
         if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
             Orbit.lastPhoneVolumeKey = Clock.now()      // not the dial: don't read that volume change as a turn
         }
         return false
     }
 
-    // ---- controllers: holds and repeats are timed by one runnable at the next deadline
-    private val controls = app.orbit.dial.core.ControllerHub { ev -> Orbit.emit(ev) }
     private var controlsListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
-    private val controlsTick = Runnable { controls.tick(Clock.now()); scheduleControls() }
-    private fun scheduleControls() {
-        main.removeCallbacks(controlsTick)
-        val at = controls.nextWake() ?: return
-        main.postDelayed(controlsTick, (at - Clock.now()).coerceIn(0, 2000))
-    }
-    private fun loadControls() {
-        val list = ControllerStore.load(this)
-        controls.set(list)
-        Orbit.log("controllers: ${list.filter { it.enabled }.joinToString { "${it.name} (${it.buttons.size})" }.ifEmpty { "none" }}")
-    }
 
 
     // ================================================================ Actions
