@@ -90,6 +90,8 @@ class Engine(
 
     private fun toolEvent(ev: DialEvent) {
         if (ev.kind == Kind.ROTATE) {
+            // the buds change the volume themselves; a controller's buttons don't
+            if (tool.rotationPassthrough && ev.source.startsWith(CONTROLLER)) actions.stepVolume(ev.delta)
             tool.rotate(actions, ev.delta)?.let(ui::hud)
             return
         }
@@ -217,6 +219,11 @@ interface Actions {
     fun nudge(direction: Int)
     /** Press the front app's play / pause control (by label), else tap the screen centre. */
     fun tapPlayPause()
+    /** Media volume up / down by [steps] (controllers in the Volume tool). */
+    fun stepVolume(steps: Int) {}
 }
+
+/** DialEvent.source prefix for events from a user's controller (core/Controls.kt). */
+const val CONTROLLER = "controller:"
 
 data class App(val pkg: String, val label: String)

@@ -35,6 +35,7 @@ class EngineTest {
         override fun shutter() { log += "shutter" }
         override fun nudge(direction: Int) { log += "nudge:$direction" }
         override fun tapPlayPause() { log += "tap" }
+        override fun stepVolume(steps: Int) { log += "vol:$steps" }
     }
     private val ui = object : Ui {
         override fun wheelOpen(items: List<Tool>, index: Int) { log += "ui:open:$index" }
@@ -188,5 +189,24 @@ class EngineTest {
         e.setTool("scroll")
         e.ev(Kind.ROTATE, 1); e.ev(Kind.ROTATE, 1); e.ev(Kind.ROTATE, -1)
         assertEquals(listOf("swipe:1", "swipe:1", "swipe:-1"), log.filter { it.startsWith("swipe:") })
+    }
+
+    @Test fun controllerTurnsStepTheVolumeButTheBudsDialDoesNot() {
+        val e = engine()
+        e.ev(Kind.ROTATE, 1)                                    // the buds already moved the volume
+        now += 400; e.handle(DialEvent(Kind.ROTATE, -1, CONTROLLER + "Remote", now))
+        assertEquals(listOf("vol:-1"), log)
+    }
+
+    @Test fun controllerMenuOpensWheelNextMovesSelectPicks() {
+        val e = engine()
+        val hub = ControllerHub { e.handle(it) }
+        hub.set(listOf(Controller("r", "Remote", "d", Controller.layout(listOf(1 to "A", 2 to "B")))))
+        hub.onKey("d", 2, true, now); now += ButtonRecognizer.HOLD_MS; hub.tick(now); hub.onKey("d", 2, false, now)
+        assertEquals(Engine.State.WHEEL, e.state)
+        hub.onKey("d", 1, true, now); now += 60; hub.onKey("d", 1, false, now)        // tap A: next item
+        hub.onKey("d", 1, true, now); now += ButtonRecognizer.HOLD_MS; hub.tick(now)    // hold A: select
+        assertEquals(Engine.State.TOOL, e.state)
+        assertEquals(e.wheel[1].id, e.tool.id)
     }
 }

@@ -76,6 +76,8 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         prefsListener = SettingsStore.listen(this) {
             main.removeCallbacks(rebuild); main.postDelayed(rebuild, 150)          // one rebuild per save
         }
+        loadControls()
+        controlsListener = ControllerStore.listen(this) { main.post { loadControls() } }
         scope.launch { Orbit.events.collect { ev -> engine.handle(ev) } }
         main.post(ticker)
         if (BuildConfig.DEBUG) registerDebugInjector()
@@ -103,6 +105,8 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
 
     override fun onDestroy() {
         prefsListener?.let { Orbit.prefs(this).unregisterOnSharedPreferenceChangeListener(it) }
+        controlsListener?.let { Orbit.prefs(this).unregisterOnSharedPreferenceChangeListener(it) }
+        main.removeCallbacks(controlsTick)
         main.removeCallbacks(rebuild)
         debugRx?.let { runCatching { unregisterReceiver(it) } }
         main.removeCallbacks(ticker)
@@ -122,13 +126,48 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         while (recent.size > 12) recent.removeLast()
     }
 
-    /** Phone volume keys: let them through, but mark them so the volume change isn't read as the dial. */
+    /**
+     * Every hardware key passes here first. Add-a-controller open: capture it. A key of
+     * one of the user's controllers: swallow it (no volume change, no shutter, no typing)
+     * and drive Orbit. Anything else goes on as normal.
+     */
     override fun onKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_VOLUME_UP || event.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
-            Orbit.lastPhoneVolumeKey = Clock.now()
+        val code = event.keyCode
+        val down = event.action == KeyEvent.ACTION_DOWN
+        if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
+        if (code in ControllerStore.RESERVED) return false
+        val dev = event.device
+        if (Orbit.capturing()) {
+            if (!down || event.repeatCount == 0)
+                Orbit.capture(Orbit.Captured(code, down, ControllerStore.deviceId(dev), ControllerStore.deviceName(dev),
+                    ControllerStore.keyLabel(code), typing = dev?.keyboardType == android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC))
+            return true
+        }
+        if (Orbit.enabled(this) && controls.onKey(ControllerStore.deviceId(dev), code, down, Clock.now())) {
+            scheduleControls()
+            return true
+        }
+        if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            Orbit.lastPhoneVolumeKey = Clock.now()      // not the dial: don't read that volume change as a turn
         }
         return false
     }
+
+    // ---- controllers: holds and repeats are timed by one runnable at the next deadline
+    private val controls = app.orbit.dial.core.ControllerHub { ev -> Orbit.emit(ev) }
+    private var controlsListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private val controlsTick = Runnable { controls.tick(Clock.now()); scheduleControls() }
+    private fun scheduleControls() {
+        main.removeCallbacks(controlsTick)
+        val at = controls.nextWake() ?: return
+        main.postDelayed(controlsTick, (at - Clock.now()).coerceIn(0, 2000))
+    }
+    private fun loadControls() {
+        val list = ControllerStore.load(this)
+        controls.set(list)
+        Orbit.log("controllers: ${list.filter { it.enabled }.joinToString { "${it.name} (${it.buttons.size})" }.ifEmpty { "none" }}")
+    }
+
 
     // ================================================================ Actions
     // ---- swipe: one quick thumb flick per click, queued so flicks never overlap.
@@ -352,6 +391,15 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
 
     override fun volume(): Float? = Orbit.rotation.level() ?: getSystemService(AudioManager::class.java).let {
         it.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / it.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+    }
+
+    override fun stepVolume(steps: Int) {
+        val am = getSystemService(AudioManager::class.java)
+        Orbit.lastPhoneVolumeKey = Clock.now()          // ours, not a dial turn
+        repeat(kotlin.math.abs(steps)) {
+            am.adjustStreamVolume(AudioManager.STREAM_MUSIC,
+                if (steps > 0) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER, 0)
+        }
     }
 
     private val vibrator by lazy { getSystemService(Vibrator::class.java) }

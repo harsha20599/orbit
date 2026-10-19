@@ -74,13 +74,23 @@ val OrbitColors = darkColorScheme(
 /** The app: Orbit's switch, setup (collapsed when done), the wheel and gestures, help. */
 class MainActivity : ComponentActivity() {
     private var refresh by mutableIntStateOf(0)
+    private var adding by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyDebugExtras(intent)
         setContent {
             MaterialTheme(colorScheme = OrbitColors) {
-                Home(refresh)
+                if (adding) {
+                    BackHandler { adding = false }
+                    AddControllerScreen(a11yOn(), Orbit.enabled(this), onSetUpA11y = {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }) { saved ->
+                        adding = false; refresh++
+                        if (saved) android.widget.Toast.makeText(this, "Saved. Your controller drives Orbit now.",
+                            android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                } else Home(refresh)
             }
         }
     }
@@ -129,6 +139,7 @@ class MainActivity : ComponentActivity() {
             top = {
                 item { OnOffCard() }
                 item { SetupCard { disclosure = true } }
+                controllersSection(refresh, onAdd = { adding = true }, onChanged = { refresh++ })
             },
             bottom = {
                 item { Section("Help", "Something not working? These usually sort it out.") }
@@ -172,7 +183,7 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.weight(1f)) {
                     Text(if (on) "Orbit is on" else "Orbit is off", style = MaterialTheme.typography.titleLarge,
                         color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
-                    Text(if (on) "Double-press the dial to open the wheel." else "The buds work normally: press plays, the dial sets volume.",
+                    Text(if (on) "Double-press the dial, or use your controller, to open the wheel." else "The buds work normally: press plays, the dial sets volume.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (on) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant)
                 }

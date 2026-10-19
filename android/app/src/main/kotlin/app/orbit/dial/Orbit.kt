@@ -45,6 +45,16 @@ object Orbit {
         fun replayInto(svc: OrbitMediaService) { svc.dial.setPassthrough(passthrough); svc.dial.setDuck(duck) }
     }
 
+    // ---- Add-a-controller: while the screen is open, every key and music press comes here
+    // instead of acting. Kept alive by the screen's heartbeat, so it can never stick on.
+    class Captured(val key: Int, val down: Boolean, val device: String?, val deviceName: String,
+                   val label: String, val media: Boolean = false, val typing: Boolean = false)
+    @Volatile var captureUntil = 0L
+    fun capturing() = Clock.now() < captureUntil
+    private val _captured = MutableSharedFlow<Captured>(extraBufferCapacity = 64)
+    val captured: SharedFlow<Captured> = _captured
+    fun capture(c: Captured) { _captured.tryEmit(c) }
+
     /** Phone volume keys pressed recently: those volume changes are not the dial. */
     @Volatile var lastPhoneVolumeKey = 0L
     fun phoneKeyRecently() = Clock.now() - lastPhoneVolumeKey < 600

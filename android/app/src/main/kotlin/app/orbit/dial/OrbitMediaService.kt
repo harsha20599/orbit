@@ -135,10 +135,11 @@ class OrbitMediaService : Service() {
                 override fun onMediaButtonEvent(i: Intent): Boolean {
                     @Suppress("DEPRECATION")
                     val ev = i.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
+                    if (ev.keyCode == KeyEvent.KEYCODE_HEADSETHOOK) { hookKey(ev); return true }
                     if (ev.action != KeyEvent.ACTION_DOWN || ev.repeatCount > 0) return true
                     val kind = when (ev.keyCode) {
                         KeyEvent.KEYCODE_MEDIA_PLAY, KeyEvent.KEYCODE_MEDIA_PAUSE,
-                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> Kind.CLICK
+                        KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE -> Kind.CLICK
                         KeyEvent.KEYCODE_MEDIA_NEXT -> Kind.DOUBLE
                         KeyEvent.KEYCODE_MEDIA_PREVIOUS -> Kind.TRIPLE
                         else -> return false
@@ -167,6 +168,19 @@ class OrbitMediaService : Service() {
         }
     }
 
+    // Wired earphone remotes: one button, HEADSETHOOK for every press; we count them.
+    private val hook = app.orbit.dial.core.TapCounter { k -> press(k, "headset button") }
+    private val hookTick = Runnable { hook.tick(Clock.now()); scheduleHook() }
+    private fun scheduleHook() {
+        main.removeCallbacks(hookTick)
+        hook.nextWake()?.let { main.postDelayed(hookTick, (it - Clock.now()).coerceIn(0, 2000)) }
+    }
+    private fun hookKey(ev: KeyEvent) {
+        if (Orbit.capturing()) { if (ev.action == KeyEvent.ACTION_DOWN && ev.repeatCount == 0) press(Kind.CLICK, "headset button"); return }
+        if (ev.action == KeyEvent.ACTION_DOWN) hook.down(Clock.now()) else if (ev.action == KeyEvent.ACTION_UP) hook.up(Clock.now())
+        scheduleHook()
+    }
+
     private var lastPressAt = 0L
     private var lastPressKind: Kind? = null
 
@@ -175,6 +189,11 @@ class OrbitMediaService : Service() {
         val now = Clock.now()
         if (kind == lastPressKind && now - lastPressAt < 150) return
         lastPressAt = now; lastPressKind = kind
+        if (Orbit.capturing()) {
+            val label = when (kind) { Kind.CLICK -> "Play / pause"; Kind.DOUBLE -> "Next track"; Kind.HOLD -> "Hold"; else -> "Previous track" }
+            Orbit.capture(Orbit.Captured(-1, true, "media", "Headphones / speaker", label, media = true))
+            return
+        }
         Orbit.log("press: $how")
         Orbit.emit(DialEvent(kind, 0, "media-session"))
     }
@@ -230,7 +249,7 @@ class OrbitMediaService : Service() {
             PendingIntent.FLAG_IMMUTABLE)
         val n = Notification.Builder(this, "dial")
             .setContentTitle("Orbit is on")
-            .setContentText("Double-press the dial to open the wheel")
+            .setContentText("Double-press the dial, or use your controller, to open the wheel")
             .setSmallIcon(R.drawable.ic_settings)
             .setContentIntent(open)
             .setOngoing(true)
