@@ -153,7 +153,10 @@ object Presets {
     val CMF = p("cmf", "CMF Buds Pro 2", "Turn the case dial to move; press, double, triple, hold.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
         b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"))
-    val EARBUDS = p("earbuds", "AirPods & other earbuds", "Press or tap the earbud once, twice, three times.",
+    val EARBUDS = p("earbuds", "OnePlus, Galaxy, Pixel Buds & similar", "Pinch or tap to select, double to open; swipe volume to move.",
+        b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
+        b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"))
+    val AIRPODS = p("airpods", "AirPods", "Press the stem once to select, twice to move, three times to open.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.FORWARD, "media:next"), b(OrbitActions.OPEN, "media:prev"))
     val SPEAKER = p("speaker", "Speaker or headphones with buttons", "Play, next / previous and volume buttons.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
@@ -170,8 +173,8 @@ object Presets {
     val BACKTAP = p("backtap", "Back tap", "Tap the back of the phone: twice to select, three times to open.",
         b(OrbitActions.SELECT, "backtap:1"), b(OrbitActions.OPEN, "backtap:2"))
 
-    val ALL = listOf(CMF, EARBUDS, SPEAKER, WIRED, VOLUME_KEYS, VOLUME_BACKTAP)
-    val BUDS = listOf(CMF, EARBUDS, SPEAKER, WIRED)
+    val ALL = listOf(CMF, EARBUDS, AIRPODS, SPEAKER, WIRED, VOLUME_KEYS, VOLUME_BACKTAP)
+    val BUDS = listOf(CMF, EARBUDS, AIRPODS, SPEAKER, WIRED)
 
     /** Several presets at once (earbuds + phone keys): every trigger kept. */
     fun combine(vararg ps: Preset): Controls {

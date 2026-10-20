@@ -221,7 +221,11 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
         }.also { it.set(draft) }
     }
     LaunchedEffect(preview) { while (true) { preview.tick(Clock.now()); now = Clock.now(); delay(20) } }
-    CaptureButtons { c -> if (c.counted) preview.pulse(c.input) else preview.onKey(c.device, c.input, c.down, Clock.now()) }
+    var heard by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    CaptureButtons { c ->
+        if (c.down) heard = Trigger(c.input).label().substringBefore(" · ") to (preview.has(c.device, c.input) || draft.uses(c.input))
+        if (c.counted) preview.pulse(c.input) else preview.onKey(c.device, c.input, c.down, Clock.now())
+    }
     BackHandler { close() }
 
     Scaffold(
@@ -289,6 +293,7 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
                         supportingContent = { Text("Open assistant, previous tool, custom command",
                             color = MaterialTheme.colorScheme.onSurfaceVariant) })
                 }
+                HeardLine(heard)
                 if (draft.triggers(OrbitActions.OPEN).isEmpty()) Hint("Nothing opens the menu yet, so you can't switch tools.", warn = true)
                 note?.let { Hint(it) }
                 if (draft.uses("key:24") || draft.uses("key:25"))
@@ -318,6 +323,17 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
         title = { Text("Discard changes?") }, text = { Text("Your changes to the controls aren't saved.") },
         confirmButton = { TextButton({ discard = false; onClose() }) { Text("Discard", color = MaterialTheme.colorScheme.error) } },
         dismissButton = { TextButton({ discard = false }) { Text("Keep editing") } })
+}
+
+/** Every press Orbit hears, used or not: "is it even reaching Orbit?" at a glance. */
+@Composable
+internal fun HeardLine(heard: Pair<String, Boolean>?) {
+    val (text, warn) = when {
+        heard == null -> "Nothing heard yet. Press a button on your earbuds, phone or remote." to false
+        heard.second -> "Last heard: ${heard.first}" to false
+        else -> "Last heard: ${heard.first}. Not used here: add it to a function, or load a preset that uses it." to true
+    }
+    Hint(text, warn = warn)
 }
 
 // =================================================================== one function

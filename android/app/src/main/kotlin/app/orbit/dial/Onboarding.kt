@@ -299,7 +299,11 @@ private fun TryControls(c: Controls) {
         }.also { it.set(c) }
     }
     LaunchedEffect(hub) { while (true) { hub.tick(Clock.now()); now = Clock.now(); delay(20) } }
-    CaptureButtons { e -> if (e.counted) hub.pulse(e.input) else hub.onKey(e.device, e.input, e.down, Clock.now()) }
+    var heard by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    CaptureButtons { e ->
+        if (e.down) heard = app.orbit.dial.core.Trigger(e.input).label().substringBefore(" · ") to c.uses(e.input)
+        if (e.counted) hub.pulse(e.input) else hub.onKey(e.device, e.input, e.down, Clock.now())
+    }
     Group {
         c.actions.forEachIndexed { i, a ->
             if (i > 0) Div()
@@ -310,5 +314,6 @@ private fun TryControls(c: Controls) {
                 supportingContent = { TriggersText(c.triggers(a)) })
         }
     }
+    HeardLine(heard)
     Hint(if (count == 0) "Change any of these later in Controls → Set up controls." else "Nice. Change any of these later in Controls → Set up controls.")
 }

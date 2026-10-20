@@ -79,7 +79,7 @@ class OrbitMediaService : Service() {
         lastIdx = idx
         val o = ourSet
         val ours = o != null && o.first == idx && Clock.now() - o.second < 700
-        Orbit.log("vol $idx/$max${if (ours) " (ours)" else ""}")
+        Orbit.log("vol $idx/$max${if (ours) " (ours)" else ""}${if (!ours && !dialOutputActive()) " (not a Bluetooth output: ignored)" else ""}")
         if (!ours && (Orbit.phoneKeyRecently() || !dialOutputActive() || (!Orbit.volumeIsDial && !Orbit.capturing()))) {
             dial.onLevel(idx.toFloat() / max, ours = true)        // not the dial: just track it
             return
@@ -229,7 +229,7 @@ class OrbitMediaService : Service() {
         if (!Orbit.requireBluetooth(this)) return true
         return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any {
             it.type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP ||
-                (Build.VERSION.SDK_INT >= 31 && it.type == AudioDeviceInfo.TYPE_BLE_HEADSET)
+                (Build.VERSION.SDK_INT >= 31 && (it.type == AudioDeviceInfo.TYPE_BLE_HEADSET || it.type == AudioDeviceInfo.TYPE_BLE_SPEAKER))
         }
     }
 
