@@ -173,7 +173,8 @@ def main(argv=None):
         log.info("Orbit is already running: opened its Settings")
         return 0
 
-    cfg, cfg_path = config_mod.load(args.config, user_settings=user_settings.load())
+    settings_now = user_settings.load()
+    cfg, cfg_path = config_mod.load(args.config, user_settings=settings_now)
     log.info("config: %s (+ %s)", cfg_path, user_settings.path())
 
     sources = plat.create_sources(cfg)
@@ -186,9 +187,14 @@ def main(argv=None):
     # Start sources first so the engine sees what actually works (e.g. falls back to
     # triple-press for the wheel when the hold sniffer can't start).
     bus = Bus()
+    # Every input goes through the controls router: the buds' sources here, keyboard /
+    # mouse hooks below. It turns them into the functions the user set up.
+    from orbit.core.controls import Controls, Router
+    router = Router(bus.post, out.media)
+    router.set_controls(Controls.from_json(settings_now.get("controls")))
 
     def post(ev: InputEvent):
-        bus.post(ev)
+        router.from_source(ev)
         for src in sources:
             src.observe(ev)
 
@@ -201,6 +207,7 @@ def main(argv=None):
     # The engine is rebuilt in place when settings change; everything holds `live`.
     live = {"engine": Engine(cfg, out, ui, sources)}
     engine = live["engine"]
+    engine.set_volume_dial(router.hub.volume_is_dial())
     bus.event.connect(lambda ev: live["engine"].handle(ev), Qt.QueuedConnection)
 
     services = plat.create_services(cfg)
@@ -214,6 +221,20 @@ def main(argv=None):
     ticker.setInterval(50)
     ticker.timeout.connect(lambda: live["engine"].tick())
     ticker.start()
+    hub_ticker = QTimer()                     # holds, double taps, repeats: needs finer timing
+    hub_ticker.setInterval(15)
+    hub_ticker.timeout.connect(router.hub.tick)
+    hub_ticker.start()
+
+    key_capture = None
+    try:
+        key_capture = plat.create_key_capture(router)
+        if key_capture:
+            key_capture.start()
+            log.info("key capture up: %s", key_capture.describe())
+    except Exception:
+        log.exception("key capture failed: keys and mouse buttons can't be controls")
+        key_capture = None
 
     # ---- tray
     off_flag = data_dir() / "off"
@@ -226,6 +247,7 @@ def main(argv=None):
     a_on.setCheckable(True)
 
     def set_on(on: bool):
+        router.paused = not on
         live["engine"].set_paused(not on)
         try:
             off_flag.unlink() if on else off_flag.write_text("off")
@@ -267,6 +289,8 @@ def main(argv=None):
         ui.bridge.set_appearance(cfg2["ui"]["appearance"])
         paused = old.paused
         live["engine"] = Engine(cfg2, out, ui, sources)
+        router.set_controls(Controls.from_json(new.get("controls")))
+        live["engine"].set_volume_dial(router.hub.volume_is_dial())
         live["engine"].set_paused(paused)
         log.info("settings applied — wheel: %s, start: %s, wheel opens with: %s",
                  live["engine"].wheel_ids, live["engine"].tool.id, sorted(live["engine"].open_with))
@@ -282,7 +306,7 @@ def main(argv=None):
         base, _ = config_mod.load(args.config)
         e = live["engine"]
         has_hold = Capability.HOLD in e.caps or Capability.PRESS_RELEASE in e.caps
-        w = SettingsWindow(base, user_settings.load(), has_hold, cfg["ui"]["accent"], apply_settings)
+        w = SettingsWindow(base, user_settings.load(), has_hold, cfg["ui"]["accent"], apply_settings, router=router)
         windows[:] = [w]
         w.show()
         w.raise_()
@@ -380,7 +404,7 @@ def main(argv=None):
             return
         done.append(True)
         live["engine"].shutdown()
-        for s in [*sources, *services]:
+        for s in [*sources, *services, *([key_capture] if key_capture else [])]:
             try:
                 s.stop()
             except Exception:

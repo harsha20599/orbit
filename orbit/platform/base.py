@@ -79,6 +79,11 @@ class Output(ABC):
     def active_window_title(self) -> str:
         return ""
 
+    def volume_step(self, n: int) -> None:
+        """System output volume up / down by n steps (a control in the Volume tool, no buds)."""
+        for _ in range(abs(n)):
+            self.keys("volumeup" if n > 0 else "volumedown")
+
     def brightness_get(self) -> float | None:
         """Display brightness 0..100, or None if not controllable. May take ~150 ms."""
         return None
@@ -106,6 +111,11 @@ class Platform(ABC):
         """Background helpers with start()/stop() and an `enabled` flag (+ optional
         `toggle_label` for the tray), e.g. hiding the OS volume flyout. Call after create_sources."""
         return []
+
+    def create_key_capture(self, router):
+        """Keyboard / media-key / mouse-button hooks feeding `router` (orbit/core/controls.py),
+        with start() / stop() / describe(); None where the OS gives no such hook."""
+        return None
 
     def is_elevated(self) -> bool:
         return True

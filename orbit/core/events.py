@@ -19,6 +19,7 @@ class Kind(str, Enum):
     HOLD = "hold"        # firmware-decoded long press (no release info)
     PRESS = "press"      # raw button down  (future: needs press/release decoding)
     RELEASE = "release"  # raw button up    (future)
+    ACTION = "action"    # a control asked for a specific function (InputEvent.action)
 
 
 class Capability(str, Enum):
@@ -35,6 +36,8 @@ class InputEvent:
     delta: int = 0
     source: str = ""
     t: float = field(default_factory=time.monotonic)
+    action: str | None = None          # set by controls (orbit/core/controls.py)
 
     def __str__(self):
-        return f"{self.kind.value}{'' if not self.delta else f'({self.delta:+d})'} <{self.source}>"
+        what = self.action if self.action else self.kind.value
+        return f"{what}{'' if not self.delta else f'({self.delta:+d})'} <{self.source}>"

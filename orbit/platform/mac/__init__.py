@@ -28,6 +28,10 @@ class MacPlatform(Platform):
         make_agent_app()
         return [MacVolumeRotationSource(cfg["device"]["audio_endpoint_match"]), MacMediaButtonSource()]
 
+    def create_key_capture(self, router):
+        from orbit.platform.mac.input_keys import MacKeyCapture
+        return MacKeyCapture(router)
+
     def create_output(self, cfg):
         from orbit.platform.mac.output import MacOutput
         from orbit.platform.mac.overlay import ensure_accessibility

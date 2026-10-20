@@ -88,7 +88,16 @@ class Engine:
         self._wheel_last = 0.0
         self._pressed_at: float | None = None
         self._quick = False
+        # Does the dial (the buds' volume) drive Orbit? Controls without a dial turn
+        # (other earbuds, keys only) leave the volume as volume.
+        self.volume_dial = True
+        self.assistant = actions.parse(cfg.get("assistant") or g_cfg.get("hold", "none"))
         self._sync_passthrough()
+
+    def set_volume_dial(self, on: bool) -> None:
+        if on != self.volume_dial:
+            self.volume_dial = on
+            self._sync_passthrough()
 
     # ------------------------------------------------------------------ public
     # ------------------------------------------------------------------ on / off
@@ -127,10 +136,33 @@ class Engine:
                 self._commit()
             return
 
+        if ev.kind == Kind.ACTION:
+            self._perform(ev.action or "")
+            return
         if self.state == State.WHEEL:
             self._wheel_event(ev)
         else:
             self._tool_event(ev)
+
+    def _perform(self, a: str) -> None:
+        """A function a control asked for (moves arrive as turns, select as a click)."""
+        from orbit.core import controls as c
+        if a == c.OPEN:
+            self._cancel() if self.state == State.WHEEL else self.open_wheel()
+            return
+        if self.state == State.WHEEL:
+            self._cancel()
+            return
+        if a == c.LAST_TOOL:
+            self.last_tool()
+        elif a == c.ASSISTANT:
+            self.assistant(self)
+        elif a.startswith(c.CUSTOM):
+            act = actions.parse(a[len(c.CUSTOM):])
+            act(self)
+            self.ui.hud(Hud("keyboard", c.action_label(a), ""))
+        else:
+            log.warning("unknown control action '%s'", a)
 
     def tick(self) -> None:
         now = time.monotonic()
@@ -191,13 +223,16 @@ class Engine:
                 self.open_wheel()
                 self._wheel_event(ev)
                 return
+            from orbit.core.controls import CONTROLLER
+            if self.tool.rotation_passthrough and ev.source.startswith(CONTROLLER):
+                self._step_volume(ev.delta)         # the buds change the volume themselves; keys don't
             h = self.tool.rotate(self, ev.delta)
             if h:
                 self.ui.hud(h)
             return
 
         name = ev.kind.value
-        if name in self.open_with:
+        if ev.action is None and name in self.open_with:
             self.open_wheel()
             return
         handled = self.tool.gesture(self, name)
@@ -251,12 +286,23 @@ class Engine:
         self.tool.enter(self)
         self._sync_passthrough()
 
+    def _step_volume(self, n: int) -> None:
+        """Volume up / down by n steps for a control in the Volume tool: through the buds'
+        own level when connected (marked as ours, so it is never read back as a turn),
+        else the system volume keys."""
+        for s in self.rotation_sources:
+            nudge = getattr(s, "nudge", None)
+            if nudge and s.level() is not None:
+                nudge(n)
+                return
+        self.out.volume_step(n)
+
     def _sync_passthrough(self) -> None:
         """Rotation side effects follow state: the wheel consumes rotation and ducks the
         level (so each detent's native blip is soft); tool mode restores the real level
         first, then passes rotation through or consumes it per tool."""
-        wheel = self.state == State.WHEEL and not self.paused
-        on = self.paused or (not wheel and self.tool.rotation_passthrough)
+        wheel = self.state == State.WHEEL and not self.paused and self.volume_dial
+        on = self.paused or not self.volume_dial or (not wheel and self.tool.rotation_passthrough)
         for s in self.rotation_sources:
             if wheel:
                 s.set_passthrough(False)

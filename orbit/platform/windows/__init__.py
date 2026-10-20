@@ -44,6 +44,10 @@ class WindowsPlatform(Platform):
         f.toggle_label = "Hide Windows volume bar"
         return [f]
 
+    def create_key_capture(self, router):
+        from orbit.platform.windows.input_keys import WindowsKeyCapture
+        return WindowsKeyCapture(router)
+
     def create_output(self, cfg):
         from orbit.platform.windows.output import WindowsOutput
         return WindowsOutput(media_source=self._media)

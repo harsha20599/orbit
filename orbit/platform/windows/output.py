@@ -23,6 +23,7 @@ VK = {
     "semicolon": 0xBA, "quote": 0xDE, "backquote": 0xC0, "lbracket": 0xDB, "rbracket": 0xDD,
     "backslash": 0xDC, "printscreen": 0x2C, "capslock": 0x14, "menu": 0x5D,
     "volumeup": 0xAF, "volumedown": 0xAE, "mute": 0xAD,
+    "playpause": 0xB3, "nexttrack": 0xB0, "prevtrack": 0xB1, "stop": 0xB2,
 }
 VK.update({f"f{i}": 0x6F + i for i in range(1, 25)})
 VK.update({c: ord(c.upper()) for c in "abcdefghijklmnopqrstuvwxyz0123456789"})

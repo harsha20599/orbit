@@ -91,6 +91,10 @@ class VolumeRotationSource(RotationSource):
     def level(self):
         return self.dial.level() if self.dial else None
 
+    def nudge(self, steps):
+        if self.dial:
+            self.dial.nudge(steps)
+
     def last_activity(self) -> float:
         return self.dial.last_activity() if self.dial else 0.0
 

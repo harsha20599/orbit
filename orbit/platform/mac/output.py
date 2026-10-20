@@ -29,9 +29,12 @@ class MacOutput(Output):
 
     # ---------------- keys
     def _post_key(self, code: int, down: bool, flags: int):
-        from Quartz import CGEventCreateKeyboardEvent, CGEventPost, CGEventSetFlags, kCGHIDEventTap
+        from Quartz import (CGEventCreateKeyboardEvent, CGEventPost, CGEventSetFlags, CGEventSetIntegerValueField,
+                            kCGEventSourceUserData, kCGHIDEventTap)
+        from orbit.platform.mac.input_keys import ORBIT_EVENT
         e = CGEventCreateKeyboardEvent(self._src, code, down)
         CGEventSetFlags(e, flags | self._held)
+        CGEventSetIntegerValueField(e, kCGEventSourceUserData, ORBIT_EVENT)    # never a control of our own
         CGEventPost(kCGHIDEventTap, e)
 
     def keys(self, combo):
@@ -62,6 +65,13 @@ class MacOutput(Output):
         if px == 0:
             return
         CGEventPost(kCGHIDEventTap, scroll_event(px, horizontal))
+
+    def volume_step(self, n):
+        """System output volume by n steps of 1/16 (the volume keys' step)."""
+        import subprocess
+        delta = round(100 * n / 16)
+        script = f"set volume output volume ((output volume of (get volume settings)) + ({delta}))"
+        subprocess.Popen(["osascript", "-e", script], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     # ---------------- media: to the real player (we own "now playing", so media keys loop back)
     def media(self, command):

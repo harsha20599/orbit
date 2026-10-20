@@ -139,6 +139,15 @@ class VolumeDial:
     def level(self) -> float | None:
         return self._saved if self._saved is not None else self._level
 
+    def nudge(self, steps: int):
+        """Volume by `steps` of the buds' grid (a control in the Volume tool). Our own
+        set, so its echo is never taken for a turn of the dial."""
+        with self._lock:
+            lvl = self._level
+        if lvl is None:
+            return
+        self._set(min(1.0, max(0.0, round(lvl * self.grid + steps) / self.grid)), "control")
+
     def last_activity(self) -> float:
         """monotonic time of the last click or our own set."""
         return max(self._last_dial, self._last_set[0])
