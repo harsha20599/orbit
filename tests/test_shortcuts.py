@@ -82,14 +82,15 @@ def test_window_adds_records_and_removes_shortcuts(tmp_path):
     row.label.setText("Snip")
     w.shortcut_renamed(sid)
     row.keys.setText("win+shift+s")
-    w.claude_keys.setText("ctrl+shift+space")
     assert st.shortcut_tool_id(sid) in [t for t, *_ in w.preview.items]
     w.save()
     s = saved[-1]
     assert s["shortcuts"] == [{"id": sid, "label": "Snip", "keys": "win+shift+s"}]
-    assert s["claude_shortcut"] == "ctrl+shift+space"
+    assert not hasattr(w, "claude_keys")                      # no Claude section any more
     assert st.shortcut_tool_id(sid) in s["wheel"]["enabled"]
-    w2 = SettingsWindow(base, s, True, "#7C9CFF", saved.append, settings_path=tmp_path / "s.json")
+    w2 = SettingsWindow(base, {**s, "claude_shortcut": "ctrl+shift+space"}, True, "#7C9CFF", saved.append,
+                        settings_path=tmp_path / "s.json")
+    assert w2.collect()["claude_shortcut"] == "ctrl+shift+space"   # an earlier choice is kept
     w2.remove_shortcut(sid)
     assert w2.collect()["shortcuts"] == [] and st.shortcut_tool_id(sid) not in w2.order
 

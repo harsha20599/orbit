@@ -56,6 +56,14 @@ def counted(inp: str) -> bool:
             (inp.startswith("media:") and inp != "media:hook"))
 
 
+def presses_for(inp: str) -> tuple["Press", ...]:
+    """How an input can be pressed. Keys, mouse buttons and the cable button go down and
+    up, so they can be tapped, double / triple tapped or held. Everything that arrives as
+    one finished event (earbud gestures, dial turns, scroll notches, trackpad gestures)
+    has no press to choose: it just happens."""
+    return () if counted(inp) else (Press.TAP, Press.DOUBLE, Press.TRIPLE, Press.HOLD)
+
+
 _KEY_NAMES = {
     "volumeup": "Volume +", "volumedown": "Volume −", "mute": "Mute", "playpause": "Play / pause key",
     "nexttrack": "Next track key", "prevtrack": "Previous track key", "stop": "Stop key",
@@ -154,7 +162,7 @@ FORWARD = "forward"
 ASSISTANT = "assistant"
 LAST_TOOL = "last_tool"
 CUSTOM = "custom:"               # custom:<action spec>, e.g. custom:keys:ctrl+shift+m, custom:launch:notepad
-CORE = (SELECT, OPEN, BACK, FORWARD)
+CORE = (OPEN, SELECT, BACK, FORWARD)          # the order people set them up in
 EXTRA = (CUSTOM, LAST_TOOL)             # ASSISTANT still runs from an older settings.json
 
 

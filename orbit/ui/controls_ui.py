@@ -62,6 +62,63 @@ TRACKPAD_NOTE = {
 }
 
 
+class _Segmented(QWidget):
+    """Two (or more) pages behind a segmented toggle: the selected segment is filled with
+    the accent, so which one is on is never in doubt. Tab-widget-like API."""
+    currentChanged = Signal(int)
+
+    def __init__(self):
+        super().__init__()
+        from PySide6.QtWidgets import QStackedWidget
+        v = QVBoxLayout(self)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(10)
+        self.bar = QFrame()
+        self.bar.setObjectName("seg")
+        self.row = QHBoxLayout(self.bar)
+        self.row.setContentsMargins(3, 3, 3, 3)
+        self.row.setSpacing(3)
+        v.addWidget(self.bar)
+        self.stack = QStackedWidget()
+        v.addWidget(self.stack, 1)
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.buttons: list[QPushButton] = []
+
+    def addTab(self, w: QWidget, label: str):
+        b = QPushButton(label)
+        b.setObjectName("segbtn")
+        b.setCheckable(True)
+        b.setCursor(Qt.PointingHandCursor)
+        i = len(self.buttons)
+        b.clicked.connect(lambda _=False, i=i: self.setCurrentIndex(i))
+        self.group.addButton(b)
+        self.buttons.append(b)
+        self.row.addWidget(b, 1)
+        self.stack.addWidget(w)
+        if i == 0:
+            b.setChecked(True)
+
+    def currentIndex(self) -> int:
+        return self.stack.currentIndex()
+
+    def setCurrentIndex(self, i: int):
+        if i == self.stack.currentIndex() and self.buttons[i].isChecked():
+            return
+        self.buttons[i].setChecked(True)
+        self.stack.setCurrentIndex(i)
+        self.currentChanged.emit(i)
+
+
+SEG_QSS = """
+    QFrame#seg { background: #1A1D25; border: 1px solid #262A34; border-radius: 10px; }
+    QPushButton#segbtn { border: none; border-radius: 8px; padding: 7px 10px; background: transparent;
+                         color: #A4AAB8; font-weight: 600; }
+    QPushButton#segbtn:hover { color: #F2F4F8; }
+    QPushButton#segbtn:checked { background: #7C9CFF; color: #0E1424; }
+"""
+
+
 class _Bridge(QObject):
     """Hook / source threads -> the Qt thread."""
     got = Signal(object)
@@ -96,14 +153,22 @@ def _confirm(parent, title: str, text: str, ok: str) -> bool:
 class _Card(QPushButton):
     """A checkable card: bold title, dim second line (accordion headers, onboarding choices)."""
 
-    def __init__(self, title: str, sub: str, chevron: bool = False):
+    def __init__(self, title: str, sub: str, chevron: bool = False, icon: str | None = None):
         super().__init__()
         self.setObjectName("card")
         self.setCheckable(True)
         self.setCursor(Qt.PointingHandCursor)
         h = QHBoxLayout(self)
         h.setContentsMargins(14, 10, 14, 10)
-        h.setSpacing(10)
+        h.setSpacing(12)
+        self.ic = None
+        if icon:
+            from orbit.ui.settings_window import _icon
+            self.ic = QLabel()
+            self.ic.setFixedSize(24, 24)
+            self.ic.setPixmap(_icon(icon, INK2).pixmap(22, 22))
+            self.ic.setStyleSheet("background: transparent;")
+            h.addWidget(self.ic)
         self.chev = QLabel("▸") if chevron else None
         if self.chev:
             self.chev.setFixedWidth(12)
@@ -120,7 +185,7 @@ class _Card(QPushButton):
         col.addWidget(self.t)
         col.addWidget(self.s)
         h.addLayout(col, 1)
-        for w in (self.t, self.s, *([self.chev] if self.chev else [])):
+        for w in (self.t, self.s, *([self.chev] if self.chev else []), *([self.ic] if self.ic else [])):
             w.setAttribute(Qt.WA_TransparentForMouseEvents)
         self.toggled.connect(lambda on: self.chev and self.chev.setText("▾" if on else "▸"))
 
@@ -210,8 +275,10 @@ class ControlsSection(QWidget):
         self.preset_btn.setMenu(menu)
         top.addWidget(self.preset_btn)
         self.reset_btn = QToolButton()
-        self.reset_btn.setText("Reset")
-        self.reset_btn.setToolTip("Remove every trigger")
+        from orbit.ui.settings_window import _icon
+        self.reset_btn.setIcon(_icon("rotate_ccw", INK2))
+        self.reset_btn.setToolTip("Reset: remove every trigger")
+        self.reset_btn.setAccessibleName("Reset controls")
         self.reset_btn.setCursor(Qt.PointingHandCursor)
         self.reset_btn.clicked.connect(self.reset)
         top.addWidget(self.reset_btn)
@@ -422,7 +489,7 @@ class FunctionDialog(QDialog):
         self.pending: Trigger | None = None
         self.setWindowTitle(ctl.action_label(action))
         self.setMinimumSize(560, 640)
-        self.setStyleSheet(sec.window().styleSheet() + CARD_QSS + f"""
+        self.setStyleSheet(sec.window().styleSheet() + CARD_QSS + SEG_QSS + f"""
             QPushButton#pick {{ text-align: left; padding: 7px 12px; border: none; border-radius: 8px;
                                 background: transparent; color: #F2F4F8; font-weight: 400; }}
             QPushButton#pick:hover {{ background: rgba(255,255,255,0.05); }}
@@ -448,7 +515,7 @@ class FunctionDialog(QDialog):
         v.addWidget(self.note)
         v.addSpacing(6)
 
-        self.tabs = QTabWidget()
+        self.tabs = _Segmented()
         # ---- Choose: categories (accordions) + search
         choose = QWidget()
         cv = QVBoxLayout(choose)
@@ -493,6 +560,7 @@ class FunctionDialog(QDialog):
             pr.addWidget(b)
         pr.addStretch(1)
         self.press_btns[Press.TAP].setChecked(True)
+        self.press_row.setVisible(False)                   # until a key or button is picked
         cv.addWidget(self.press_row)
         self.tabs.addTab(choose, "Choose")
         # ---- Record
@@ -596,10 +664,11 @@ class FunctionDialog(QDialog):
 
     def pick(self, inp: str):
         self._chosen = inp
-        counted = ctl.counted(inp)
-        for b in self.press_btns.values():
-            b.setEnabled(not counted)
-        self._set_pending(Trigger(inp, Press.TAP if counted else self._press()))
+        options = ctl.presses_for(inp)
+        self.press_row.setVisible(bool(options))           # a gesture just happens: nothing to choose
+        for p, btn in self.press_btns.items():
+            btn.setVisible(p in options)
+        self._set_pending(Trigger(inp, self._press() if options else Press.TAP))
 
     def _press(self) -> Press:
         return next((p for p, b in self.press_btns.items() if b.isChecked()), Press.TAP)
@@ -718,15 +787,15 @@ class CustomCommandDialog(QDialog):
 
 # ==================================================================== onboarding
 
-ONBOARD = [
-    ("cmf", "CMF Buds Pro 2", "The case dial: turn it to move, press to select, double press to open."),
-    ("earbuds", "Other earbuds or headphones", "Their press gestures: once, twice, three times."),
-    ("media_keys", "A keyboard volume knob or media keys", "Volume keys move; play / pause selects."),
-    ("mouse", "Mouse side buttons", "Back / forward move; hold them to select or open."),
-    ("trackpad", "Trackpad gestures", "Swipes and taps (Windows) or rotate and pinch (Mac)."),
-    ("mod_scroll", "A key + scroll", "Hold Ctrl and scroll."),
-    ("f_keys", "A macro pad or spare keys (F13–F16)", "For pads and remotes that send F13–F16."),
-    ("", "Explore and set it up myself", "Start from scratch: pick every trigger yourself."),
+ONBOARD = [            # (group, preset id, icon, title, what it does)
+    ("Earbuds", "cmf", "dial", "CMF Buds Pro 2", "The case dial: turn it to move, press to select, double press to open."),
+    ("Earbuds", "earbuds", "headphones", "Other earbuds or headphones", "Their press gestures: once, twice, three times."),
+    ("Keyboard, mouse & trackpad", "media_keys", "knob", "A volume knob or media keys", "Volume keys move; play / pause selects."),
+    ("Keyboard, mouse & trackpad", "mouse", "mouse", "Mouse side buttons", "Back / forward move; hold them to select or open."),
+    ("Keyboard, mouse & trackpad", "trackpad", "touchpad", "Trackpad gestures", "Swipes and taps (Windows); rotate and pinch (Mac)."),
+    ("Keyboard, mouse & trackpad", "mod_scroll", "scroll", "A key + scroll", "Hold Ctrl and scroll."),
+    ("Keyboard, mouse & trackpad", "f_keys", "grid", "A macro pad or spare keys", "For pads and remotes that send F13–F16."),
+    ("Something else", "", "compass", "Explore and set it up myself", "Start from scratch: pick every trigger yourself."),
 ]
 
 
@@ -737,7 +806,7 @@ class OnboardingDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Set up Orbit")
-        self.setMinimumSize(560, 600)
+        self.setMinimumSize(580, 720)
         if parent is not None:
             self.setStyleSheet(parent.styleSheet() + CARD_QSS)
         self.result_controls: Controls | None = None
@@ -763,10 +832,18 @@ class OnboardingDialog(QDialog):
         self.choice.setExclusive(True)
         self.options: dict[str, _Card] = {}
         here = {p.id for p in Presets.here()}
-        for pid, name, about in ONBOARD:
+        group = None
+        for g, pid, icon, name, about in ONBOARD:
             if pid and pid not in here:
                 continue
-            rb = _Card(name, about)
+            if g != group:
+                group = g
+                head = QLabel(g.upper())
+                head.setStyleSheet(f"color: {INK3}; font-size: 11px; font-weight: 600; letter-spacing: 1px;")
+                a.addSpacing(10)
+                a.addWidget(head)
+                a.addSpacing(4)
+            rb = _Card(name, about, icon=icon)
             self.choice.addButton(rb)
             self.options[pid] = rb
             a.addWidget(rb)

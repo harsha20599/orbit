@@ -682,30 +682,6 @@ class SettingsWindow(QWidget):
         v.addSpacing(6)
         v.addWidget(sreset, 0, Qt.AlignLeft)
 
-        v.addSpacing(34)
-        v.addWidget(self._heading("Claude"))
-        v.addSpacing(4)
-        v.addWidget(self._help("The Quick Entry shortcut you set in Claude > Settings > Keyboard shortcuts. "
-                               "Open assistant uses it to open Claude dictation."))
-        v.addSpacing(14)
-        claude = _Group()
-        self.claude_keys = KeyField(merged.get("claude", {}).get("shortcut", "ctrl+alt+v"), lambda: self.changed())
-        crow = QFrame()
-        crow.setObjectName("row")
-        ch = QHBoxLayout(crow)
-        ch.setContentsMargins(16, 8, 10, 8)
-        ch.setSpacing(12)
-        lead = QLabel()
-        lead.setPixmap(_icon("claude", INK2).pixmap(16, 16))
-        lead.setFixedWidth(28)
-        ch.addWidget(lead)
-        lab = QLabel("Quick Entry shortcut")
-        lab.setFont(_font(14, QFont.DemiBold))
-        ch.addWidget(lab, 1)
-        ch.addWidget(self.claude_keys)
-        claude.box.addWidget(crow)
-        claude.restyle()
-        v.addWidget(claude)
         v.addSpacing(10)
         self.note = QLabel()
         self.note.setObjectName("warn")
@@ -846,7 +822,7 @@ class SettingsWindow(QWidget):
             "appearance": self.appearance_box.currentData(),
             "controls": self.controls_sec.controls.to_json(),
             "scroll": {"max_gain": self.fast_scroll.value(), "notches_per_detent": self.click_scroll.value()},
-            "claude_shortcut": self.claude_keys.combo() or "ctrl+alt+v",
+            **({"claude_shortcut": self.current["claude_shortcut"]} if self.current.get("claude_shortcut") else {}),
             "shortcuts": [r.value() for r in self.sc_rows.values()],
             **({"onboarded": True} if self.onboarded else {}),
             **({"gestures": self.current["gestures"]} if self.current.get("gestures") else {}),

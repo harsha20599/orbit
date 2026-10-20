@@ -241,14 +241,27 @@ class WindowsOutput(Output):
                            creationflags=0x08000000)  # CREATE_NO_WINDOW
         return r.stdout
 
+    _internal = None
+
+    def _builtin(self):
+        if self._internal is None:
+            from orbit.platform.windows.brightness import InternalBrightness
+            type(self)._internal = InternalBrightness()
+        return self._internal
+
     def brightness_get(self):
+        """The laptop's own screen if it has one (WMI), else the monitors Twinkle Tray drives."""
+        v = self._builtin().get()
+        if v is not None:
+            return v
         import re
         out = re.sub(r"\x1b\[[0-9;]*m", "", self._twinkle("--List"))
         vals = [int(v) for v in re.findall(r"Brightness:\s*(\d+)", out)]
         return sum(vals) / len(vals) if vals else None
 
     def brightness_set(self, value):
-        self._twinkle("--All", f"--Set={int(round(value))}")
+        self._builtin().set(value)                            # built-in screen (laptops)
+        self._twinkle("--All", f"--Set={int(round(value))}")  # external monitors, when Twinkle Tray is there
 
     def press_app_button(self, app_title: str, name_pattern: str):
         """Bring an app's main window forward and press a button in it by its accessible

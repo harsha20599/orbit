@@ -84,7 +84,7 @@ object OrbitActions {
     const val BACK = "back"
     const val FORWARD = "forward"
     /** The functions every setup shows, in this order. */
-    val CORE = listOf(SELECT, OPEN, BACK, FORWARD)
+    val CORE = listOf(OPEN, SELECT, BACK, FORWARD)
     const val ASSISTANT = "assistant"
     const val CUSTOM = "custom_command"
     /** Functions a user can add (custom commands: Windows and Mac). */

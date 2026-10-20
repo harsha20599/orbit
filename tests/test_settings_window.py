@@ -231,3 +231,41 @@ def test_onboarded_flag_is_kept(tmp_path):
     w2, saved2, *_ = window(tmp_path)
     w2.save()
     assert "onboarded" not in saved2[-1]
+
+
+def test_gestures_show_no_press_choice_keys_do(tmp_path):
+    from orbit.core import controls as ctl
+    from orbit.core.controls import Press, Trigger
+    from orbit.ui.controls_ui import FunctionDialog
+    w, *_ = window(tmp_path)
+    d = FunctionDialog(w.controls_sec, ctl.OPEN)
+    d.show()
+    assert not d.press_row.isVisible()                               # nothing picked yet
+    d.pick("touchpad:4-swipe-up")
+    assert not d.press_row.isVisible() and d.pending == Trigger("touchpad:4-swipe-up")
+    d.pick("key:f13")
+    assert d.press_row.isVisible() and all(b.isVisible() for b in d.press_btns.values())
+    d.press_btns[Press.DOUBLE].click()
+    assert d.pending == Trigger("key:f13", Press.DOUBLE)
+    d.done(0)
+
+
+def test_choose_record_toggle(tmp_path):
+    from orbit.core import controls as ctl
+    from orbit.ui.controls_ui import FunctionDialog
+    w, *_ = window(tmp_path)
+    d = FunctionDialog(w.controls_sec, ctl.OPEN)
+    seen = []
+    d.tabs.currentChanged.connect(seen.append)
+    assert d.tabs.currentIndex() == 0 and d.tabs.buttons[0].isChecked()
+    d.tabs.buttons[1].click()
+    assert d.tabs.currentIndex() == 1 and d.tabs.buttons[1].isChecked() and not d.tabs.buttons[0].isChecked()
+    assert seen == [1]
+    d.done(0)
+
+
+def test_rows_in_order_menu_first(tmp_path):
+    from orbit.core import controls as ctl
+    w, *_ = window(tmp_path)
+    assert list(w.controls_sec.rows)[:4] == [ctl.OPEN, ctl.SELECT, ctl.BACK, ctl.FORWARD]
+    assert w.controls_sec.reset_btn.text() == "" and not w.controls_sec.reset_btn.icon().isNull()

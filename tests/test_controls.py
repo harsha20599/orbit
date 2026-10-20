@@ -212,7 +212,7 @@ def test_a_function_can_have_several_triggers():
 
 def test_actions_list_core_then_extras():
     co, _ = Presets.CMF.controls.add(c.LAST_TOOL, Trigger("media:prev"))
-    assert co.actions == [c.SELECT, c.OPEN, c.BACK, c.FORWARD, c.LAST_TOOL]
+    assert co.actions == [c.OPEN, c.SELECT, c.BACK, c.FORWARD, c.LAST_TOOL]
 
 
 def test_uses_exact_or_prefix():
@@ -482,3 +482,15 @@ def test_end_to_end_mouse_buttons_drive_the_wheel():
         r.key("mouse:forward", True); k.adv(0.05); r.key("mouse:forward", False)
     r.key("mouse:back", True); k.adv(c.HOLD_S); r.hub.tick(); r.key("mouse:back", False)
     assert e.state == State.TOOL and e.tool.id == "scroll"
+
+
+def test_presses_only_where_they_make_sense():
+    full = (Press.TAP, Press.DOUBLE, Press.TRIPLE, Press.HOLD)
+    for inp in ("key:f13", "key:ctrl+space", "mouse:back", "media:hook"):
+        assert c.presses_for(inp) == full, inp
+    for inp in ("touchpad:4-swipe-up", "touchpad:pinch-in", "scroll:ctrl+up", "vol:up", "media:next"):
+        assert c.presses_for(inp) == (), inp
+
+
+def test_functions_are_listed_menu_first():
+    assert c.CORE == (c.OPEN, c.SELECT, c.BACK, c.FORWARD)
