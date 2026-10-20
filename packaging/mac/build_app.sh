@@ -34,6 +34,9 @@ python -m PyInstaller --noconfirm --windowed --name Orbit --icon build/Orbit.icn
   --hidden-import orbit.platform.mac.input_media \
   --hidden-import orbit.platform.mac.output \
   --hidden-import orbit.platform.mac.overlay \
+  --hidden-import orbit.platform.mac.input_keys \
+  --hidden-import orbit.platform.mac.keytap \
+  --hidden-import orbit.ui.controls_ui \
   --hidden-import orbit.ui.settings_window \
   packaging/orbit_main.py
 

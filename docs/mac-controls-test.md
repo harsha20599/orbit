@@ -25,5 +25,12 @@ Watch the log: `~/.orbit/orbit.log` (or the terminal).
 | 13 | Menu bar → untick **Orbit on**; press F16 / volume keys | They behave as without Orbit (volume changes) |
 | 14 | Earbuds (CMF Buds Pro 2): **Load preset → CMF Buds Pro 2** → Save; double press, turn, press | Same as before the change |
 | 15 | Settings → Controls → Add a function → **Custom command…** → Press a key combo **⌘⇧4** → Next → Record a trigger (e.g. F17) → Save; press F17 | The screenshot crosshair appears |
+| 16 | Settings → Controls → **Reset** icon → confirm | Every trigger gone. Then **Run setup again**: "What do you want to control Orbit with?" lists CMF Buds Pro 2 first, grouped, with icons |
+| 17 | Setup → **A key + scroll** → Continue; hold **Ctrl** and scroll in any app | The highlight moves as set; plain scrolling (no key) still scrolls the page |
+| 18 | Setup again → **Trackpad gestures**; on the trackpad: **rotate** two fingers, **pinch**, **3-finger swipe** | They act as the preset shows; gestures you didn't bind keep their macOS action |
+| 19 | Next → Change → **Record** → do a gesture (e.g. rotate) → **Save and close** | Saved at once (the row shows it, no extra Save) |
+| 20 | Change → **Choose**: open a category, search "F15" | Categories open / close; search filters; the picked one has a subtle check |
+| 21 | Load a preset while triggers are set | Asks before replacing |
+| 22 | Pick the Brightness tool, press Next a few times | The built-in display gets brighter |
 
 Report the log lines from steps 1, 3 and 8, and any step that didn't match.
