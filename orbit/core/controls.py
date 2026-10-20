@@ -98,6 +98,10 @@ class Trigger:
     input: str
     press: Press = Press.TAP
 
+    def __post_init__(self):                 # "hold" from Qt / JSON -> Press.HOLD (raises on nonsense)
+        if not isinstance(self.press, Press):
+            object.__setattr__(self, "press", Press(self.press))
+
     @property
     def counted(self) -> bool:
         return counted(self.input)

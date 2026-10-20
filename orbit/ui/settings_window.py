@@ -1,5 +1,5 @@
-"""Settings window (Windows + macOS): which tools are on the wheel and in what
-order, the tool Orbit starts on, and what each press gesture does.
+"""Settings window (Windows + macOS): the controls (which trigger does which function),
+which tools are on the wheel and in what order, and the tool Orbit starts on.
 
 Left: a live preview of the wheel, redrawn as items are switched or reordered.
 Right: grouped lists of native controls. Writes orbit.core.settings
@@ -11,7 +11,7 @@ import math
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QUrl,
+from PySide6.QtCore import (QEasingCurve, QPointF, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl,
                             QVariantAnimation, Property)
 from PySide6.QtGui import (QColor, QFont, QFontDatabase, QGuiApplication, QIcon, QKeySequence, QPainter, QPen,
                            QPixmap, QRadialGradient)
@@ -493,8 +493,10 @@ class SettingsWindow(QWidget):
     `on_save(settings)` is called with the new settings (already written to disk)."""
 
     def __init__(self, base_cfg: dict, current: dict, has_hold: bool, accent: str,
-                 on_save: Callable[[dict], None], settings_path: Path | None = None):
+                 on_save: Callable[[dict], None], settings_path: Path | None = None, router=None):
         super().__init__()
+        self.current = current
+        self.router = router
         self.base = base_cfg
         self.accent = accent
         self.on_save = on_save
@@ -562,6 +564,19 @@ class SettingsWindow(QWidget):
         v.setContentsMargins(32, 30, 32, 24)
         v.setSpacing(0)
 
+        from orbit.core.controls import Controls
+        from orbit.ui.controls_ui import ControlsSection
+        v.addWidget(self._heading("Controls"))
+        v.addSpacing(4)
+        self.controls_sec = ControlsSection(Controls.from_json(current.get("controls")), router, has_hold,
+                                            lambda: self.changed(), _Group)
+        v.addWidget(self.controls_sec)
+        self._capture_poll = QTimer(self)                 # capture only while this window (or its dialog) is in front
+        self._capture_poll.setInterval(200)
+        self._capture_poll.timeout.connect(self._sync_capture)
+        self._capture_poll.start()
+
+        v.addSpacing(34)
         v.addWidget(self._heading("Wheel items"))
         v.addSpacing(4)
         v.addWidget(self._help("Switch on what the wheel shows. The order runs clockwise from the top."))
@@ -616,9 +631,9 @@ class SettingsWindow(QWidget):
         v.addWidget(look)
 
         v.addSpacing(34)
-        v.addWidget(self._heading("Dial"))
+        v.addWidget(self._heading("Start"))
         v.addSpacing(4)
-        v.addWidget(self._help("What the dial does when the wheel is closed."))
+        v.addWidget(self._help("The tool Orbit starts on, before you pick one from the wheel."))
         v.addSpacing(14)
         dial = _Group()
         self.start = self._combo()
@@ -631,20 +646,6 @@ class SettingsWindow(QWidget):
         lead.setPixmap(_icon("star", INK2).pixmap(16, 16))
         lead.setFixedWidth(28)
         dial.box.addWidget(_ComboRow(lead, "Start with", self.start))
-        self.gesture_boxes: dict[str, QComboBox] = {}
-        self.app_rows: dict[str, _AppRow] = {}
-        for g in st.GESTURES:
-            current = st.gesture_action(merged, g)
-            box = self._gesture_box(g, st.gesture_action(base_cfg, g), current)
-            self.gesture_boxes[g] = box
-            row = _ComboRow(GesturePips(g, INK2), GESTURE_NAMES[g], box)
-            if g == "hold" and not has_hold:
-                row.setToolTip("macOS doesn't pass the hold to apps; on Windows it needs Orbit running as admin.")
-            dial.box.addWidget(row)
-            app_name = current[len(OPEN_APP):] if isinstance(current, str) and current.startswith(OPEN_APP) else ""
-            self.app_rows[g] = _AppRow(app_name, lambda: self.changed())
-            dial.box.addWidget(self.app_rows[g])
-            box.currentIndexChanged.connect(lambda _: self.changed())
         dial.restyle()
         v.addWidget(dial)
 
@@ -670,7 +671,7 @@ class SettingsWindow(QWidget):
         v.addWidget(self._heading("Claude"))
         v.addSpacing(4)
         v.addWidget(self._help("The Quick Entry shortcut you set in Claude > Settings > Keyboard shortcuts. "
-                               "Press and hold uses it to open Claude dictation."))
+                               "Open assistant uses it to open Claude dictation."))
         v.addSpacing(14)
         claude = _Group()
         self.claude_keys = KeyField(merged.get("claude", {}).get("shortcut", "ctrl+alt+v"), lambda: self.changed())
@@ -695,13 +696,6 @@ class SettingsWindow(QWidget):
         self.note.setObjectName("warn")
         self.note.setWordWrap(True)
         v.addWidget(self.note)
-        if not has_hold:
-            n = QLabel("Press and hold can't be read on this computer (macOS keeps it from apps; Windows "
-                       "needs Orbit running as admin).")
-            n.setObjectName("meta")
-            n.setWordWrap(True)
-            v.addSpacing(4)
-            v.addWidget(n)
         v.addStretch(1)
         right.addWidget(scroll, 1)
 
@@ -835,22 +829,27 @@ class SettingsWindow(QWidget):
             "wheel": {"order": list(self.order), "enabled": enabled},
             "default_tool": self.start.currentData(),
             "appearance": self.appearance_box.currentData(),
-            "gestures": {g: self._gesture_value(g) for g, b in self.gesture_boxes.items() if b.isEnabled()},
+            "controls": self.controls_sec.controls.to_json(),
             "scroll": {"max_gain": self.fast_scroll.value(), "notches_per_detent": self.click_scroll.value()},
             "claude_shortcut": self.claude_keys.combo() or "ctrl+alt+v",
             "shortcuts": [r.value() for r in self.sc_rows.values()],
+            **({"gestures": self.current["gestures"]} if self.current.get("gestures") else {}),
         }
 
-    def _gesture_value(self, g: str):
-        v = self.gesture_boxes[g].currentData()
-        if v == OPEN_APP:
-            name = self.app_rows[g].edit.text().strip()
-            return OPEN_APP + name if name else "none"
-        return v
+    def _sync_capture(self):
+        from PySide6.QtWidgets import QApplication
+        dlg = self.controls_sec.dialog
+        front = QApplication.activeWindow()
+        self.controls_sec.capture_on(self.isVisible() and front is not None and (front is self or front is dlg))
+
+    def closeEvent(self, e):
+        self._capture_poll.stop()
+        self.controls_sec.capture_on(False)
+        super().closeEvent(e)
 
     def changed(self):
-        for g, row in getattr(self, "app_rows", {}).items():
-            row.setVisible(self.gesture_boxes[g].currentData() == OPEN_APP)
+        if not hasattr(self, "controls_sec") or not hasattr(self, "start"):
+            return
         s = self.collect()
         on = s["wheel"]["enabled"]
         self.preview.set_items([(t, self.tools[t].label, self.tools[t].icon) for t in on], s["default_tool"])
@@ -858,21 +857,17 @@ class SettingsWindow(QWidget):
         system_dark = not hasattr(hints, "colorScheme") or hints.colorScheme() != Qt.ColorScheme.Light
         a = s["appearance"]
         self.preview.set_look(system_dark if a == "system" else a == "dark")
-        opens = [GESTURE_NAMES[g].lower() for g, b in self.gesture_boxes.items()
-                 if b.isEnabled() and b.currentData() == st.OPEN_WHEEL]
-        self.how.setText(("Open it with a " + " or ".join(opens) + "." if opens else
-                          "Open it with a triple press.") + "\nTurn to pick, press to choose.")
+        from orbit.core import controls as ctl
+        c = self.controls_sec.controls
+        opens = [t.label() for t in c.triggers(ctl.OPEN)]
+        self.how.setText(("Open it with " + " or ".join(opens) + "." if opens else "Nothing opens it yet.") +
+                         "\nThen Next / Previous to pick, Select to choose.")
         problems = []
         if not on:
             problems.append("Switch on at least one item.")
         if len(on) > MAX_ITEMS:
             problems.append(f"{len(on)} items is too many to pick by feel. Keep it to {MAX_ITEMS} or fewer; 8 reads best.")
-        if not opens:
-            problems.append("No gesture opens the wheel, so a triple press will.")
-        unnamed = [GESTURE_NAMES[g] for g in self.app_rows
-                   if self.gesture_boxes[g].currentData() == OPEN_APP and not self.app_rows[g].edit.text().strip()]
-        if unnamed:
-            problems.append("Type the app to open for: " + ", ".join(unnamed) + ".")
+        problems += self.controls_sec.problems()
         blank = [sc["label"] for sc in s["shortcuts"] if not sc["keys"]]
         if blank:
             problems.append("Set the keys for: " + ", ".join(blank) + " (shortcuts without keys aren't saved).")

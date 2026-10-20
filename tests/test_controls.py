@@ -153,6 +153,13 @@ def test_key_input_orders_modifiers():
     assert c.key_input("space", ["alt", "cmd"]) == "key:cmd+alt+space"
 
 
+def test_press_given_as_text_is_coerced():
+    assert Trigger("key:f13", "hold").press is Press.HOLD
+    assert Trigger("key:f13", "hold") == Trigger("key:f13", Press.HOLD)
+    with pytest.raises(ValueError):
+        Trigger("key:f13", "wiggle")
+
+
 def test_counted_inputs_are_always_taps():
     co, _ = Controls().add(c.OPEN, Trigger("media:next", Press.HOLD))
     assert co.triggers(c.OPEN) == [Trigger("media:next", Press.TAP)]

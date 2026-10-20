@@ -94,22 +94,18 @@ def test_window_adds_records_and_removes_shortcuts(tmp_path):
     assert w2.collect()["shortcuts"] == [] and st.shortcut_tool_id(sid) not in w2.order
 
 
-def test_window_open_an_app_gesture_and_scroll_feel(tmp_path):
+def test_window_keeps_old_gestures_and_saves_scroll_feel(tmp_path):
     from PySide6.QtWidgets import QApplication
-    from orbit.ui.settings_window import OPEN_APP, SettingsWindow
+    from orbit.ui.settings_window import SettingsWindow
     QApplication.instance() or QApplication([])
     base, _ = config_mod.load(platform="windows")
     saved = []
     w = SettingsWindow(base, {"gestures": {"triple": "launch:Spotify"}}, True, "#7C9CFF", saved.append,
                        settings_path=tmp_path / "s.json")
-    assert w.gesture_boxes["triple"].currentData() == OPEN_APP
-    assert w.app_rows["triple"].edit.text() == "Spotify" and not w.app_rows["triple"].isHidden()
-    assert w.app_rows["click"].isHidden()
-    w.app_rows["triple"].edit.setText("DaVinci Resolve")
     w.fast_scroll.slider.setValue(round(2.5 / 0.5))
     w.save()
     s = saved[-1]
-    assert s["gestures"]["triple"] == "launch:DaVinci Resolve"
+    assert s["gestures"] == {"triple": "launch:Spotify"}         # an older settings.json's choice survives a save
     assert s["scroll"]["max_gain"] == 2.5
     cfg = st.apply(base, s)
-    assert cfg["tools"]["scroll"]["max_gain"] == 2.5 and cfg["gestures"]["triple"] == "launch:DaVinci Resolve"
+    assert cfg["tools"]["scroll"]["max_gain"] == 2.5

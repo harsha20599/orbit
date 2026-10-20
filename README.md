@@ -53,6 +53,22 @@ Everything is adjustable in **Settings** (tray / menu-bar icon → Settings…, 
 home screen): which tools are on the wheel and in what order, what each press does (including
 "Open an app…"), your own keyboard-shortcut items, scroll speed, light / dark look.
 
+## Controls: any buttons
+
+The dial is only the start. In **Settings → Controls** (Android: **Set up controls**) pick
+what does each of Orbit's four functions (**Single press / Select, Open menu, Previous,
+Next**), with any mix of:
+
+- the CMF dial, or any earbuds' or headphones' press gestures (AirPods, OnePlus, Galaxy…)
+- volume and media keys, a keyboard's volume knob, spare keys (F13–F24) and shortcuts
+- mouse side buttons (Windows, macOS)
+- the phone's volume keys, back taps, chop or twist (Android)
+
+Each trigger can be a tap, double tap, triple tap or hold. Start from a preset, then
+**Choose** (search or browse) or **Record** (press it the way you'll use it). Keys you use
+for Orbit are taken from apps while Orbit is on; every other key works as usual.
+Optional extra functions: Open assistant, Previous tool, Custom command (desktop).
+
 ## Good to know
 
 - **Fast spins lose some clicks.** The buds send at most about three dial steps a second and
