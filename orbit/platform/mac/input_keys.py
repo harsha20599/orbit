@@ -14,18 +14,23 @@ from __future__ import annotations
 import logging
 import threading
 
-from orbit.platform.mac.keytap import KEY_NAMES, TapTracker, mods_of, system_key
+from orbit.platform.mac.keytap import (KEY_NAMES, Gestures, ScrollNotches, TapTracker, mods_of, swipe_input,
+                                       system_key)
 
 log = logging.getLogger("orbit.keys")
 
 ORBIT_EVENT = 0x4F52_4254          # "ORBT": Orbit's own synthetic events
 NX_SYSDEFINED = 14
+# NSEvent types the tap also sees (trackpad)
+EV_ROTATE, EV_MAGNIFY, EV_SWIPE, EV_SMART_MAGNIFY, EV_SCROLL = 18, 30, 31, 32, 22
 
 
 class MacKeyCapture:
     def __init__(self, router):
         self.router = router
         self.tracker = TapTracker(router.wants, router.key)
+        self.gestures = Gestures()
+        self.notches = ScrollNotches()
         self._tap = None
         self._loop = None
         self._ready = threading.Event()
@@ -46,7 +51,8 @@ class MacKeyCapture:
         import Quartz as Q
         mask = (Q.CGEventMaskBit(Q.kCGEventKeyDown) | Q.CGEventMaskBit(Q.kCGEventKeyUp) |
                 Q.CGEventMaskBit(Q.kCGEventOtherMouseDown) | Q.CGEventMaskBit(Q.kCGEventOtherMouseUp) |
-                (1 << NX_SYSDEFINED))
+                (1 << NX_SYSDEFINED) | (1 << EV_SCROLL) | (1 << EV_ROTATE) | (1 << EV_MAGNIFY) |
+                (1 << EV_SWIPE) | (1 << EV_SMART_MAGNIFY))
         self._tap = Q.CGEventTapCreate(Q.kCGSessionEventTap, Q.kCGHeadInsertEventTap, Q.kCGEventTapOptionDefault,
                                        mask, self._on_event, None)
         if self._tap is None:
@@ -80,6 +86,19 @@ class MacKeyCapture:
                 k = system_key(ns.subtype(), ns.data1()) if ns is not None else None
                 if k and self.tracker.key(k[0], set(), k[1], k[2]):
                     return None
+            elif etype == EV_SCROLL:
+                mods = mods_of(Q.CGEventGetFlags(event))
+                if mods:
+                    v = Q.CGEventGetDoubleValueField(event, Q.kCGScrollWheelEventFixedPtDeltaAxis1)
+                    h = Q.CGEventGetDoubleValueField(event, Q.kCGScrollWheelEventFixedPtDeltaAxis2)
+                    inp, n = self.notches.feed(v, h, mods)
+                    if inp and self.router.wants_gesture(inp):
+                        for _ in range(n):
+                            self.router.gesture(inp)
+                        return None
+            elif etype in (EV_MAGNIFY, EV_ROTATE, EV_SWIPE, EV_SMART_MAGNIFY):
+                if self._gesture(etype, event):
+                    return None
             elif etype in (Q.kCGEventOtherMouseDown, Q.kCGEventOtherMouseUp):
                 b = Q.CGEventGetIntegerValueField(event, Q.kCGMouseEventButtonNumber)
                 if self.tracker.mouse(b, etype == Q.kCGEventOtherMouseDown):
@@ -87,3 +106,25 @@ class MacKeyCapture:
         except Exception:
             log.exception("event tap")
         return event
+
+    def _gesture(self, etype, event) -> bool:
+        """True = swallow (a control uses this kind of gesture, so apps don't zoom / rotate too)."""
+        from AppKit import NSEvent
+        ns = NSEvent.eventWithCGEvent_(event)
+        if ns is None:
+            return False
+        r = self.router
+        if etype == EV_MAGNIFY:
+            g = self.gestures.magnify(ns.magnification(), ns.phase())
+            ours = r.wants_gesture("touchpad:pinch-in") or r.wants_gesture("touchpad:pinch-out")
+        elif etype == EV_ROTATE:
+            g = self.gestures.rotate(ns.rotation(), ns.phase())
+            ours = r.wants_gesture("touchpad:rotate-left") or r.wants_gesture("touchpad:rotate-right")
+        elif etype == EV_SWIPE:
+            g = swipe_input(ns.deltaX(), ns.deltaY())
+            ours = bool(g) and r.wants_gesture(g)
+        else:
+            g, ours = "touchpad:smart-zoom", r.wants_gesture("touchpad:smart-zoom")
+        if g and r.wants_gesture(g):
+            r.gesture(g)
+        return ours

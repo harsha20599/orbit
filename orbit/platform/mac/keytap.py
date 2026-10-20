@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from orbit.core.controls import key_input
+from orbit.core.controls import key_input, scroll_input
 from orbit.platform.mac.keys import FLAGS, KEYCODES
 
 _MODIFIER_NAMES = {"cmd", "shift", "capslock", "alt", "ctrl", "fn"}
@@ -39,6 +39,71 @@ def mods_of(flags: int) -> set[str]:
 
 def mouse_name(button: int) -> str | None:
     return {2: "mouse:middle", 3: "mouse:back", 4: "mouse:forward"}.get(button)
+
+
+# NSEventPhase: the gesture's start and end
+PHASE_BEGAN, PHASE_ENDED, PHASE_CANCELLED = 0x1, 0x8, 0x10
+PINCH = 0.15            # total magnification for a pinch
+ROTATE_DEG = 20.0
+
+
+class Gestures:
+    """Trackpad magnify / rotate events (one per frame) -> one gesture at its end."""
+
+    def __init__(self):
+        self.mag = 0.0
+        self.rot = 0.0
+
+    def magnify(self, value: float, phase: int) -> str | None:
+        if phase & PHASE_BEGAN:
+            self.mag = 0.0
+        self.mag += value
+        if phase & (PHASE_ENDED | PHASE_CANCELLED):
+            total, self.mag = self.mag, 0.0
+            if phase & PHASE_ENDED and abs(total) >= PINCH:
+                return "touchpad:pinch-out" if total > 0 else "touchpad:pinch-in"
+        return None
+
+    def rotate(self, degrees: float, phase: int) -> str | None:
+        if phase & PHASE_BEGAN:
+            self.rot = 0.0
+        self.rot += degrees
+        if phase & (PHASE_ENDED | PHASE_CANCELLED):
+            total, self.rot = self.rot, 0.0
+            if phase & PHASE_ENDED and abs(total) >= ROTATE_DEG:
+                return "touchpad:rotate-left" if total > 0 else "touchpad:rotate-right"   # + = counter-clockwise
+        return None
+
+
+def swipe_input(dx: float, dy: float) -> str | None:
+    """NSEventTypeSwipe deltas (±1) -> a swipe. deltaX > 0: the fingers moved left."""
+    if dx:
+        return "touchpad:swipe-left" if dx > 0 else "touchpad:swipe-right"
+    if dy:
+        return "touchpad:swipe-up" if dy > 0 else "touchpad:swipe-down"
+    return None
+
+
+class ScrollNotches:
+    """Modifier + scroll -> one input per notch; trackpads scroll in fractions of a line."""
+
+    def __init__(self):
+        self.acc: dict[str, float] = {}
+
+    def feed(self, vertical: float, horizontal: float, mods: set[str]) -> tuple[str | None, int]:
+        if vertical:
+            d, amount = ("up" if vertical > 0 else "down"), abs(vertical)
+        elif horizontal:
+            d, amount = ("left" if horizontal > 0 else "right"), abs(horizontal)
+        else:
+            return None, 0
+        inp = scroll_input(d, mods)
+        if inp is None:
+            return None, 0
+        total = self.acc.get(inp, 0.0) + amount
+        n = int(total + 1e-9)
+        self.acc = {inp: total - n}
+        return inp, n
 
 
 class TapTracker:

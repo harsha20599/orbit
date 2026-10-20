@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from orbit.core.controls import key_input
+from orbit.core.controls import key_input, scroll_input
 
 VK_NAMES: dict[int, str] = {
     0x08: "backspace", 0x09: "tab", 0x0D: "enter", 0x13: "pause", 0x14: "capslock", 0x1B: "esc",
@@ -27,6 +27,26 @@ MOD_VKS: dict[int, str] = {0x10: "shift", 0xA0: "shift", 0xA1: "shift", 0x11: "c
 
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
 WM_MBUTTONDOWN, WM_MBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP = 0x0207, 0x0208, 0x020B, 0x020C
+WM_MOUSEWHEEL, WM_MOUSEHWHEEL = 0x020A, 0x020E
+WHEEL_DELTA = 120
+
+
+def wheel_direction(msg: int, mouse_data: int) -> str | None:
+    """'up' / 'down' / 'left' / 'right' for a wheel message (high word = signed delta)."""
+    d = (mouse_data >> 16) & 0xFFFF
+    d = d - 0x10000 if d & 0x8000 else d
+    if not d:
+        return None
+    if msg == WM_MOUSEWHEEL:
+        return "up" if d > 0 else "down"
+    if msg == WM_MOUSEHWHEEL:
+        return "right" if d > 0 else "left"
+    return None
+
+
+def wheel_amount(mouse_data: int) -> int:
+    d = (mouse_data >> 16) & 0xFFFF
+    return abs(d - 0x10000 if d & 0x8000 else d)
 
 
 def mouse_input(msg: int, mouse_data: int) -> tuple[str, bool] | None:
@@ -45,9 +65,13 @@ class KeyTracker:
     a key swallowed on its way down is swallowed on its way up too, whatever changed
     in between (modifiers released, Orbit turned off, settings saved)."""
 
-    def __init__(self, wants: Callable[[str], bool], key: Callable[[str, bool], bool]):
+    def __init__(self, wants: Callable[[str], bool], key: Callable[[str, bool], bool],
+                 wants_gesture: Callable[[str], bool] | None = None, gesture: Callable[[str], bool] | None = None):
         self.wants = wants
         self.key = key
+        self.wants_gesture = wants_gesture or (lambda inp: False)
+        self.gesture = gesture or (lambda inp: False)
+        self._wheel: dict[str, int] = {}               # partial notches (precision touchpads scroll in small steps)
         self.held: set[str] = set()
         self._held_vks: dict[int, str] = {}
         self._swallowed: dict[object, str] = {}
@@ -66,11 +90,25 @@ class KeyTracker:
         return self._button(vk, key_input(name, self.held), down)
 
     def mouse(self, msg: int, mouse_data: int) -> bool:
+        if msg in (WM_MOUSEWHEEL, WM_MOUSEHWHEEL):
+            return self._scroll(msg, mouse_data)
         m = mouse_input(msg, mouse_data)
         if m is None:
             return False
         inp, down = m
         return self._button(inp, inp, down)
+
+    def _scroll(self, msg: int, mouse_data: int) -> bool:
+        d = wheel_direction(msg, mouse_data)
+        inp = scroll_input(d, self.held) if d else None
+        if inp is None or not self.wants_gesture(inp):
+            return False                                    # plain scrolling, or nothing uses it
+        acc = self._wheel.get(inp, 0) + wheel_amount(mouse_data)
+        while acc >= WHEEL_DELTA:
+            acc -= WHEEL_DELTA
+            self.gesture(inp)
+        self._wheel = {inp: acc}                           # a change of direction / keys starts over
+        return True
 
     def _button(self, ident, inp: str, down: bool) -> bool:
         if down:

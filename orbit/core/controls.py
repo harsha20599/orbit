@@ -13,6 +13,9 @@ mix freely, and a function can have several.
 Input ids:
     key:<combo>                 "key:f13", "key:ctrl+shift+space", "key:volumeup", "key:playpause"
     mouse:back|forward|middle   mouse buttons
+    scroll:<mods>+up|down|left|right   a modifier held + one wheel notch ("scroll:ctrl+up")
+    touchpad:<gesture>          "3-swipe-left", "4-tap" (Windows); "pinch-in", "rotate-right",
+                                "smart-zoom", "swipe-left" (macOS)
     media:play|next|prev|hold   the earbuds' gestures, as the OS hands them to Orbit
     vol:up|down                 the CMF dial (it turns the buds' volume)
 
@@ -47,8 +50,10 @@ class Press(str, Enum):
 
 
 def counted(inp: str) -> bool:
-    """The device counts presses itself (earbud gestures, dial turns): always a tap."""
-    return inp.startswith("vol:") or (inp.startswith("media:") and inp != "media:hook")
+    """One event per use (earbud gestures, dial turns, scroll notches, trackpad gestures):
+    always a "tap"; there is no down / up to time."""
+    return (inp.startswith(("vol:", "scroll:", "touchpad:")) or
+            (inp.startswith("media:") and inp != "media:hook"))
 
 
 _KEY_NAMES = {
@@ -73,10 +78,26 @@ def key_name(name: str) -> str:
     return name.capitalize()
 
 
+_TOUCHPAD = {
+    "pinch-in": "Pinch in", "pinch-out": "Pinch out", "rotate-left": "Rotate left",
+    "rotate-right": "Rotate right", "smart-zoom": "Two-finger double tap",
+    "swipe-left": "Swipe left", "swipe-right": "Swipe right", "swipe-up": "Swipe up", "swipe-down": "Swipe down",
+}
+
+
 def input_label(inp: str) -> str:
     if inp.startswith("key:"):
         parts = inp[4:].split("+")
         return "+".join(key_name(p) for p in parts)
+    if inp.startswith("scroll:"):
+        *mods, d = inp[7:].split("+")
+        return " + ".join([key_name(m) for m in mods] + [f"scroll {d}"])
+    if inp.startswith("touchpad:"):
+        g = inp[9:]
+        if g in _TOUCHPAD:
+            return _TOUCHPAD[g]
+        n, _, rest = g.partition("-")
+        return f"{n}-finger {rest.replace('-', ' ')}"
     return {
         "mouse:back": "Mouse back button", "mouse:forward": "Mouse forward button",
         "mouse:middle": "Middle mouse button",
@@ -85,6 +106,12 @@ def input_label(inp: str) -> str:
         "media:hook": "Cable button",
         "vol:up": "Dial forward", "vol:down": "Dial back",
     }.get(inp, inp)
+
+
+def scroll_input(direction: str, mods: Iterable[str]) -> str | None:
+    """'up' + {'ctrl'} -> 'scroll:ctrl+up'. None without a modifier: plain scrolling is never a control."""
+    held = [m for m in MODS if m in set(mods)]
+    return "scroll:" + "+".join(held + [direction]) if held else None
 
 
 def key_input(name: str, mods: Iterable[str] = ()) -> str:
@@ -128,7 +155,7 @@ ASSISTANT = "assistant"
 LAST_TOOL = "last_tool"
 CUSTOM = "custom:"               # custom:<action spec>, e.g. custom:keys:ctrl+shift+m, custom:launch:notepad
 CORE = (SELECT, OPEN, BACK, FORWARD)
-EXTRA = (ASSISTANT, CUSTOM, LAST_TOOL)
+EXTRA = (CUSTOM, LAST_TOOL)             # ASSISTANT still runs from an older settings.json
 
 
 def action_label(a: str) -> str:
@@ -243,8 +270,26 @@ class Presets:
                (SELECT, "mouse:back", H), (OPEN, "mouse:forward", H))
     F_KEYS = _p("f_keys", "Spare keys (F13–F16)", "For macro pads and remotes that send F13–F16.",
                 (BACK, "key:f13", T), (FORWARD, "key:f14", T), (SELECT, "key:f15", T), (OPEN, "key:f16", T))
+    TRACKPAD_WIN = _p("trackpad", "Trackpad gestures", "Three-finger swipes move; three-finger tap selects; "
+                      "four-finger tap opens.",
+                      (BACK, "touchpad:3-swipe-left", T), (FORWARD, "touchpad:3-swipe-right", T),
+                      (SELECT, "touchpad:3-tap", T), (OPEN, "touchpad:4-tap", T), platforms=("win32",))
+    TRACKPAD_MAC = _p("trackpad", "Trackpad gestures", "Rotate to move; pinch in to select; "
+                      "two-finger double tap opens.",
+                      (BACK, "touchpad:rotate-left", T), (FORWARD, "touchpad:rotate-right", T),
+                      (SELECT, "touchpad:pinch-in", T), (OPEN, "touchpad:smart-zoom", T), platforms=("darwin",))
+    SCROLL = _p("mod_scroll", "Ctrl + scroll", "Hold Ctrl and scroll to move; Ctrl + Shift + scroll selects / opens.",
+                (BACK, "scroll:ctrl+up", T), (FORWARD, "scroll:ctrl+down", T),
+                (SELECT, "scroll:ctrl+shift+down", T), (OPEN, "scroll:ctrl+shift+up", T))
 
-    ALL = (CMF, EARBUDS, MEDIA_KEYS, MOUSE, F_KEYS)
+    ALL = (CMF, EARBUDS, MEDIA_KEYS, MOUSE, F_KEYS, TRACKPAD_WIN, TRACKPAD_MAC, SCROLL)
+
+    @classmethod
+    def here(cls, platform: str | None = None) -> tuple[Preset, ...]:
+        """The presets that work on this OS."""
+        import sys
+        plat = platform or sys.platform
+        return tuple(p for p in cls.ALL if plat in p.platforms)
 
     @classmethod
     def by_id(cls, pid: str | None) -> Preset | None:
@@ -398,6 +443,9 @@ class ControlsHub:
             (r.down if down else r.up)(self.clock())
             return True
 
+    def uses(self, inp: str) -> bool:
+        return any(b.trigger.input == inp for b in self.controls.bindings)
+
     def pulse(self, inp: str, n: int = 1, source: str | None = None) -> bool:
         """n of an input the device counts itself (earbud gesture, dial turn)."""
         with self._lock:
@@ -496,3 +544,19 @@ class Router:
 
     def wants(self, inp: str) -> bool:
         return not self.paused and (bool(self.capture and self.capture_keys) or self.hub.has(inp))
+
+    def gesture(self, inp: str, n: int = 1) -> bool:
+        """A one-shot input from a hook: a modifier + scroll notch, a trackpad gesture
+        (hook thread). True = swallow it."""
+        if self.paused:
+            return False
+        cap = self.capture
+        if cap:
+            if self.capture_keys or self.hub.uses(inp):
+                cap(Captured(inp, True, counted=True))
+                return True
+            return False
+        return self.hub.pulse(inp, n)
+
+    def wants_gesture(self, inp: str) -> bool:
+        return not self.paused and (bool(self.capture and self.capture_keys) or self.hub.uses(inp))

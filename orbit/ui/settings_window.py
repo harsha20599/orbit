@@ -493,9 +493,11 @@ class SettingsWindow(QWidget):
     `on_save(settings)` is called with the new settings (already written to disk)."""
 
     def __init__(self, base_cfg: dict, current: dict, has_hold: bool, accent: str,
-                 on_save: Callable[[dict], None], settings_path: Path | None = None, router=None):
+                 on_save: Callable[[dict], None], settings_path: Path | None = None, router=None,
+                 first_run_setup: bool = False):
         super().__init__()
         self.current = current
+        self.onboarded = bool(current.get("onboarded"))
         self.router = router
         self.base = base_cfg
         self.accent = accent
@@ -569,7 +571,10 @@ class SettingsWindow(QWidget):
         v.addWidget(self._heading("Controls"))
         v.addSpacing(4)
         self.controls_sec = ControlsSection(Controls.from_json(current.get("controls")), router, has_hold,
-                                            lambda: self.changed(), _Group)
+                                            lambda: self.changed(), _Group, persist=self.apply_now,
+                                            on_setup=self.run_setup)
+        if first_run_setup and not self.onboarded:
+            QTimer.singleShot(350, self.run_setup)
         v.addWidget(self.controls_sec)
         self._capture_poll = QTimer(self)                 # capture only while this window (or its dialog) is in front
         self._capture_poll.setInterval(200)
@@ -666,6 +671,16 @@ class SettingsWindow(QWidget):
         scroll_grp.box.addWidget(self.click_scroll)
         scroll_grp.restyle()
         v.addWidget(scroll_grp)
+        base_sc = base_cfg["tools"].get("scroll", {})
+        self._scroll_defaults = (float(base_sc.get("max_gain", 3.5)), float(base_sc.get("notches_per_detent", 1.0)))
+        sreset = QPushButton("  Reset scroll to defaults")
+        sreset.setObjectName("quiet")
+        sreset.setIcon(_icon("rotate_ccw", INK2))
+        sreset.setIconSize(QSize(14, 14))
+        sreset.setCursor(Qt.PointingHandCursor)
+        sreset.clicked.connect(self.reset_scroll)
+        v.addSpacing(6)
+        v.addWidget(sreset, 0, Qt.AlignLeft)
 
         v.addSpacing(34)
         v.addWidget(self._heading("Claude"))
@@ -833,6 +848,7 @@ class SettingsWindow(QWidget):
             "scroll": {"max_gain": self.fast_scroll.value(), "notches_per_detent": self.click_scroll.value()},
             "claude_shortcut": self.claude_keys.combo() or "ctrl+alt+v",
             "shortcuts": [r.value() for r in self.sc_rows.values()],
+            **({"onboarded": True} if self.onboarded else {}),
             **({"gestures": self.current["gestures"]} if self.current.get("gestures") else {}),
         }
 
@@ -876,10 +892,31 @@ class SettingsWindow(QWidget):
         self.save_btn.setEnabled(0 < len(on) <= MAX_ITEMS)
 
     def save(self):
+        self.apply_now()
+        self.close()
+
+    def apply_now(self):
+        """Save and apply everything shown, keeping the window open (a control's Save and close)."""
         s = self.collect()
         st.save(s, self.settings_path)
         self.on_save(s)
-        self.close()
+        self.current = s
+
+    def reset_scroll(self):
+        gain, notches = self._scroll_defaults
+        self.fast_scroll.slider.setValue(round(gain / self.fast_scroll.step))
+        self.click_scroll.slider.setValue(round(notches / self.click_scroll.step))
+
+    def run_setup(self):
+        from orbit.ui.controls_ui import OnboardingDialog
+        d = OnboardingDialog(self)
+        self._setup_dialog = d
+        ok = d.exec()
+        self._setup_dialog = None
+        if ok and d.result_controls is not None:
+            self.controls_sec.set_controls(d.result_controls)
+        self.onboarded = True                      # asked once; "Run setup again" is always there
+        self.apply_now()
 
     def reset(self):
         st.save({}, self.settings_path)

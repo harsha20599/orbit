@@ -306,7 +306,8 @@ def main(argv=None):
         base, _ = config_mod.load(args.config)
         e = live["engine"]
         has_hold = Capability.HOLD in e.caps or Capability.PRESS_RELEASE in e.caps
-        w = SettingsWindow(base, user_settings.load(), has_hold, cfg["ui"]["accent"], apply_settings, router=router)
+        w = SettingsWindow(base, user_settings.load(), has_hold, cfg["ui"]["accent"], apply_settings, router=router,
+                           first_run_setup=True)
         windows[:] = [w]
         w.show()
         w.raise_()

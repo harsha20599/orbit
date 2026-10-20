@@ -132,3 +132,88 @@ def test_mac_tracker_swallows_bound_keys_and_shortcuts():
     assert t.key("volumeup", set(), True, True) is True     # repeat while held
     assert t.key("volumeup", set(), False, False) is True
     assert [e.action or e.delta for e in posted] == ["open_wheel", 1]
+
+
+# ================================================================ scroll + modifier
+
+def gtracker(controls):
+    r, posted = router(controls)
+    return wk.KeyTracker(r.wants, r.key, r.wants_gesture, r.gesture), r, posted
+
+
+def wheel(delta):
+    return (delta & 0xFFFF) << 16
+
+
+def test_win_ctrl_scroll_is_a_control_plain_scroll_is_not():
+    t, r, posted = gtracker(Presets.SCROLL.controls)
+    assert t.mouse(wk.WM_MOUSEWHEEL, wheel(120)) is False          # no modifier: scrolls as usual
+    t.keyboard(0xA2, True)
+    assert t.mouse(wk.WM_MOUSEWHEEL, wheel(120)) is True           # ctrl + up: previous
+    assert t.mouse(wk.WM_MOUSEWHEEL, wheel(-120)) is True          # ctrl + down: next
+    t.keyboard(0xA2, False)
+    assert [e.delta for e in posted] == [-1, 1]
+
+
+def test_win_precision_scroll_adds_up_to_notches():
+    t, r, posted = gtracker(Presets.SCROLL.controls)
+    t.keyboard(0x11, True)
+    for _ in range(5):
+        assert t.mouse(wk.WM_MOUSEWHEEL, wheel(-40)) is True       # swallowed even between notches
+    assert [e.delta for e in posted] == [1]                        # 200 of 120: one notch so far
+
+
+def test_win_unbound_modifier_scroll_passes():
+    t, r, posted = gtracker(Presets.SCROLL.controls)
+    t.keyboard(0x12, True)                                         # alt + scroll: not in the preset
+    assert t.mouse(wk.WM_MOUSEWHEEL, wheel(120)) is False
+    assert wk.wheel_direction(wk.WM_MOUSEHWHEEL, wheel(-120)) == "left"
+
+
+def test_win_record_captures_modifier_scroll():
+    t, r, posted = gtracker(Controls())
+    seen = []
+    r.capture, r.capture_keys = seen.append, True
+    t.keyboard(0x10, True)
+    assert t.mouse(wk.WM_MOUSEWHEEL, wheel(120)) is True
+    assert seen[0].input == "scroll:shift+up" and seen[0].counted
+
+
+def test_scroll_labels():
+    from orbit.core import controls as c
+    assert c.input_label("scroll:ctrl+shift+down") == "Ctrl + Shift + scroll down"
+    assert c.scroll_input("up", set()) is None
+    assert c.input_label("touchpad:3-swipe-left") == "3-finger swipe left"
+    assert c.input_label("touchpad:4-tap") == "4-finger tap"
+    assert c.input_label("touchpad:pinch-in") == "Pinch in"
+
+
+# ================================================================ macOS trackpad + scroll
+
+def test_mac_pinch_and_rotate_fire_once_at_the_end():
+    g = keytap.Gestures()
+    assert g.magnify(-0.05, keytap.PHASE_BEGAN) is None
+    assert g.magnify(-0.08, 0x4) is None
+    assert g.magnify(-0.06, keytap.PHASE_ENDED) == "touchpad:pinch-in"
+    assert g.magnify(0.3, keytap.PHASE_BEGAN | keytap.PHASE_ENDED) == "touchpad:pinch-out"
+    assert g.magnify(0.05, keytap.PHASE_BEGAN) is None and g.magnify(0.04, keytap.PHASE_ENDED) is None   # too small
+    assert g.rotate(12, keytap.PHASE_BEGAN) is None
+    assert g.rotate(15, keytap.PHASE_ENDED) == "touchpad:rotate-left"
+    assert g.rotate(-30, keytap.PHASE_BEGAN | keytap.PHASE_ENDED) == "touchpad:rotate-right"
+    assert g.rotate(-40, keytap.PHASE_BEGAN | keytap.PHASE_CANCELLED) is None
+
+
+def test_mac_swipes():
+    assert keytap.swipe_input(1, 0) == "touchpad:swipe-left"
+    assert keytap.swipe_input(-1, 0) == "touchpad:swipe-right"
+    assert keytap.swipe_input(0, 1) == "touchpad:swipe-up"
+    assert keytap.swipe_input(0, 0) is None
+
+
+def test_mac_scroll_notches_need_a_modifier_and_add_up():
+    s = keytap.ScrollNotches()
+    assert s.feed(1.0, 0, set()) == (None, 0)
+    assert s.feed(0.4, 0, {"cmd"}) == ("scroll:cmd+up", 0)
+    assert s.feed(0.7, 0, {"cmd"}) == ("scroll:cmd+up", 1)
+    assert s.feed(-2.0, 0, {"cmd"}) == ("scroll:cmd+down", 2)
+    assert s.feed(0, 1.0, {"alt"}) == ("scroll:alt+left", 1)

@@ -193,6 +193,8 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
     var presets by remember { mutableStateOf(false) }
     var addFn by remember { mutableStateOf(false) }
     var discard by remember { mutableStateOf(false) }
+    var confirmPreset by remember { mutableStateOf<app.orbit.dial.core.Preset?>(null) }
+    var confirmReset by remember { mutableStateOf(false) }
     var lit by remember { mutableStateOf<String?>(null) }
     var litAt by remember { mutableLongStateOf(0L) }
     var now by remember { mutableLongStateOf(Clock.now()) }
@@ -252,6 +254,7 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
                         Text("Press any of your buttons to test: its function lights up.", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    TextButton({ if (draft.bindings.isNotEmpty()) confirmReset = true }) { Text("Reset") }
                     Box {
                         OutlinedButton({ presets = true }) {
                             Text("Load presets"); Spacer(Modifier.size(6.dp))
@@ -266,7 +269,11 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
                                             Text(p.about, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                     },
-                                    onClick = { draft = p.controls; presets = false; note = "Loaded “${p.name}”. Change anything, then Save." })
+                                    onClick = {
+                                        presets = false
+                                        if (draft.bindings.isNotEmpty() && draft != p.controls) confirmPreset = p
+                                        else { draft = p.controls; note = "Loaded “${p.name}”. Change anything, then Save." }
+                                    })
                             }
                         }
                     }
@@ -319,6 +326,19 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
                 if (OrbitActions.EXTRA.none { it !in draft.actions }) Text("All added.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }, confirmButton = {}, dismissButton = { TextButton({ addFn = false }) { Text("Cancel") } })
+    confirmPreset?.let { p ->
+        AlertDialog(onDismissRequest = { confirmPreset = null },
+            title = { Text("Load “${p.name}”?") }, text = { Text("It replaces the controls you've set.") },
+            confirmButton = { TextButton({ draft = p.controls; confirmPreset = null
+                note = "Loaded “${p.name}”. Change anything, then Save." }) { Text("Replace") } },
+            dismissButton = { TextButton({ confirmPreset = null }) { Text("Cancel") } })
+    }
+    if (confirmReset) AlertDialog(onDismissRequest = { confirmReset = false },
+        title = { Text("Reset controls?") }, text = { Text("Removes every trigger from every function. Then Save.") },
+        confirmButton = { TextButton({ draft = Controls(emptyList()); confirmReset = false
+            note = "Everything cleared. Pick triggers, or load a preset, then Save." }) {
+            Text("Remove all", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton({ confirmReset = false }) { Text("Cancel") } })
     if (discard) AlertDialog(onDismissRequest = { discard = false },
         title = { Text("Discard changes?") }, text = { Text("Your changes to the controls aren't saved.") },
         confirmButton = { TextButton({ discard = false; onClose() }) { Text("Discard", color = MaterialTheme.colorScheme.error) } },

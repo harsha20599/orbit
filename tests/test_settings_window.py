@@ -25,7 +25,7 @@ def test_window_collects_toggles_order_and_controls(tmp_path):
     first, second = w.order[0], w.order[1]
     w.rows[second].switch.setChecked(False)
     w.move(first, 1)
-    w.controls_sec.load_preset(Presets.MOUSE)
+    w.controls_sec.load_preset(Presets.MOUSE, ask=False)
     assert second not in [t for t, *_ in w.preview.items]
     assert "Mouse forward button" in w.how.text()
     w.save()
@@ -49,52 +49,112 @@ def test_controls_section_shows_the_saved_setup_and_default(tmp_path):
     assert w2.controls_sec.rows[ctl.OPEN].trig.text() == "F16 · tap"
 
 
-def test_function_dialog_choose_adds_and_moves_triggers(tmp_path):
+def test_reset_clears_every_trigger(tmp_path):
+    from orbit.core.controls import Controls
+    w, saved, app, _ = window(tmp_path)
+    w.controls_sec.reset(ask=False)
+    assert w.controls_sec.controls == Controls()
+    assert all(r.trig.text() == "Not set" for r in w.controls_sec.rows.values())
+    assert any("Nothing opens" in p for p in w.controls_sec.problems())
+
+
+def test_add_menu_has_no_assistant():
+    from orbit.core import controls as ctl
+    assert ctl.ASSISTANT not in ctl.EXTRA
+
+
+def test_choose_accordion_search_and_save_and_close(tmp_path):
     from orbit.core import controls as ctl
     from orbit.core.controls import Press, Presets, Trigger
     from orbit.ui.controls_ui import FunctionDialog
     w, saved, app, _ = window(tmp_path, {"controls": Presets.F_KEYS.controls.to_json()})
     sec = w.controls_sec
     d = FunctionDialog(sec, ctl.SELECT)
+    assert all(not c.body.isVisibleTo(d) for c in d.cats)          # categories start closed
     d.search.setText("mouse forward")
-    items = [d.list.item(i) for i in range(d.list.count())]
-    target = next(it for it in items if it.data(0x0100) == "mouse:forward")
-    d.list.setCurrentItem(target)
-    d.press.setCurrentIndex(d.press.findData(Press.HOLD))
-    d._add_chosen()
+    mouse = next(c for c in d.cats if c.title == "Mouse buttons")
+    assert mouse.head.isChecked() and mouse.items["mouse:forward"].isVisibleTo(d)
+    assert not mouse.items["mouse:back"].isVisibleTo(d)
+    d.pick("mouse:forward")
+    d.press_btns[Press.HOLD].click()
+    assert d.pending == Trigger("mouse:forward", Press.HOLD)
+    n = len(saved)
+    d.save_and_close()                                               # saves now: no separate Save
+    assert len(saved) == n + 1
     assert Trigger("mouse:forward", Press.HOLD) in sec.controls.triggers(ctl.SELECT)
-    d.search.setText("")
-    f14 = next(d.list.item(i) for i in range(d.list.count()) if d.list.item(i).data(0x0100) == "key:f14")
-    d.list.setCurrentItem(f14)
-    d.press.setCurrentIndex(d.press.findData(Press.TAP))
-    d._add_chosen()                                          # F14 tap was Next: it moves
-    assert sec.controls.triggers(ctl.FORWARD) == [] and "Next" in d.note.text()
-    assert "Nothing opens" not in " ".join(sec.problems())
-    d.done(0)
+    assert saved[-1]["controls"]["bindings"]
 
 
-def test_function_dialog_record_classifies_the_press(tmp_path):
+def test_choosing_a_used_trigger_says_it_moves(tmp_path):
     from orbit.core import controls as ctl
-    from orbit.core.controls import Captured, Press, Presets, Trigger, Router
+    from orbit.core.controls import Presets
+    from orbit.ui.controls_ui import FunctionDialog
+    w, saved, app, _ = window(tmp_path, {"controls": Presets.F_KEYS.controls.to_json()})
+    d = FunctionDialog(w.controls_sec, ctl.SELECT)
+    d.pick("key:f14")                                                # F14 tap is Next
+    assert "Next" in d.note.text()
+    d.save_and_close()
+    assert w.controls_sec.controls.triggers(ctl.FORWARD) == []
+
+
+def test_cancel_forgets(tmp_path):
+    from orbit.core import controls as ctl
+    from orbit.core.controls import Presets
+    from orbit.ui.controls_ui import FunctionDialog
+    w, saved, app, _ = window(tmp_path, {"controls": Presets.F_KEYS.controls.to_json()})
+    before = w.controls_sec.controls
+    d = FunctionDialog(w.controls_sec, ctl.SELECT)
+    d._remove(before.triggers(ctl.SELECT)[0])
+    d.pick("mouse:back")
+    d.reject()
+    assert w.controls_sec.controls == before and not saved
+
+
+def test_record_then_save_and_close(tmp_path):
+    import time
+    from orbit.core import controls as ctl
+    from orbit.core.controls import Captured, Press, Presets, Router, Trigger
+    from orbit.ui.controls_ui import FunctionDialog
     r = Router(lambda e: None, lambda m: None)
     w, saved, app, _ = window(tmp_path, {"controls": Presets.F_KEYS.controls.to_json()}, router=r)
-    from orbit.ui.controls_ui import FunctionDialog
     d = FunctionDialog(w.controls_sec, ctl.OPEN)
     d.tabs.setCurrentIndex(1)
-    assert r.capture_keys is True                            # Record: every key is captured
+    assert r.capture_keys is True
     clock = w.controls_sec.preview.clock
     d.on_captured(Captured("key:ctrl+f20", True))
     d.on_captured(Captured("key:ctrl+f20", False))
-    import time
     deadline = time.monotonic() + 1.5
     while d._rec_got is None and time.monotonic() < deadline:
         app.processEvents()
         d._rec and d._rec.tick(clock())
-    assert d._rec_got == Trigger("key:ctrl+f20", Press.TAP)
-    d._rec_use()
+    assert d._rec_got == Trigger("key:ctrl+f20", Press.TAP) == d.pending
+    assert "Adding" in d.pending_lab.text()
+    d.save_and_close()
     assert Trigger("key:ctrl+f20") in w.controls_sec.controls.triggers(ctl.OPEN)
+    assert saved and r.capture_keys is False
+
+
+def test_record_a_trackpad_gesture_or_modifier_scroll(tmp_path):
+    from orbit.core import controls as ctl
+    from orbit.core.controls import Captured, Trigger
+    from orbit.ui.controls_ui import FunctionDialog
+    w, saved, app, _ = window(tmp_path)
+    d = FunctionDialog(w.controls_sec, ctl.FORWARD)
+    d.tabs.setCurrentIndex(1)
+    d.on_captured(Captured("scroll:ctrl+down", True, counted=True))
+    assert d.pending == Trigger("scroll:ctrl+down")
+    d._rec_reset()
+    d.on_captured(Captured("touchpad:3-swipe-right", True, counted=True))
+    assert d.pending == Trigger("touchpad:3-swipe-right")
     d.done(0)
-    assert r.capture_keys is False
+
+
+def test_catalog_per_platform():
+    from orbit.ui.controls_ui import catalog
+    win = {t: ins for t, _, ins in catalog("win32")}
+    mac = {t: ins for t, _, ins in catalog("darwin")}
+    assert "touchpad:3-swipe-left" in win["Trackpad gestures"] and "touchpad:pinch-in" in mac["Trackpad gestures"]
+    assert "scroll:ctrl+up" in win["Scroll + a key"] and "scroll:cmd+up" in mac["Scroll + a key"]
 
 
 def test_live_test_shows_last_heard_and_lights_the_function(tmp_path):
@@ -118,10 +178,10 @@ def test_live_test_shows_last_heard_and_lights_the_function(tmp_path):
 
 
 def test_hold_warning_when_the_hold_cant_be_read(tmp_path):
-    w, saved, app, _ = window(tmp_path, has_hold=False)
     from orbit.core import controls as ctl
     from orbit.core.controls import Trigger
-    c, _ = w.controls_sec.controls.add(ctl.ASSISTANT, Trigger("media:hold"))
+    w, saved, app, _ = window(tmp_path, has_hold=False)
+    c, _ = w.controls_sec.controls.add(ctl.LAST_TOOL, Trigger("media:hold"))
     w.controls_sec.set_controls(c)
     assert any("press and hold" in p for p in w.controls_sec.problems())
 
@@ -134,3 +194,40 @@ def test_custom_command_spec(tmp_path):
     d.app_rb.setChecked(True)
     d.app.setText("Spotify")
     assert d.spec() == "launch:Spotify"
+
+
+def test_scroll_reset_to_defaults(tmp_path):
+    w, saved, app, base = window(tmp_path, {"scroll": {"max_gain": 7.0, "notches_per_detent": 2.5}})
+    assert w.fast_scroll.value() == 7.0
+    w.reset_scroll()
+    assert w.fast_scroll.value() == float(base["tools"]["scroll"]["max_gain"])
+    assert w.click_scroll.value() == float(base["tools"]["scroll"].get("notches_per_detent", 1.0))
+
+
+def test_onboarding_picks(tmp_path):
+    from orbit.core.controls import Controls, Presets
+    from orbit.ui.controls_ui import OnboardingDialog
+    w, *_ = window(tmp_path)
+    d = OnboardingDialog(w)
+    assert d.picked() == "cmf"
+    d._next()                                                        # CMF: the Nothing X step next
+    assert d.page == 1 and d.next.text() == "Finish"
+    d._next()
+    assert d.result_controls == Presets.CMF.controls
+    d2 = OnboardingDialog(w)
+    d2.options[""].setChecked(True)                                  # explore myself: from scratch
+    d2._next()
+    assert d2.result_controls == Controls()
+    d3 = OnboardingDialog(w)
+    d3.options["mouse"].setChecked(True)
+    d3._next()
+    assert d3.result_controls == Presets.MOUSE.controls
+
+
+def test_onboarded_flag_is_kept(tmp_path):
+    w, saved, *_ = window(tmp_path, {"onboarded": True})
+    w.save()
+    assert saved[-1]["onboarded"] is True
+    w2, saved2, *_ = window(tmp_path)
+    w2.save()
+    assert "onboarded" not in saved2[-1]

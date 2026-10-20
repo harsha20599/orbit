@@ -88,7 +88,7 @@ object OrbitActions {
     const val ASSISTANT = "assistant"
     const val CUSTOM = "custom_command"
     /** Functions a user can add (custom commands: Windows and Mac). */
-    val EXTRA = listOf(ASSISTANT, CUSTOM, "last_tool")
+    val EXTRA = listOf(CUSTOM, "last_tool")            // ASSISTANT still runs from older saved controls
     val DESKTOP_ONLY = setOf(CUSTOM)
 
     fun label(a: String): String = when {

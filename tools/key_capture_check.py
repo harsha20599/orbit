@@ -37,7 +37,7 @@ def recorder():
     def ms(code, w, l):
         if code == 0:
             m = ik.MSLLHOOKSTRUCT.from_address(l)
-            mi = mouse_input(w, m.mouseData)
+            mi = mouse_input(w, m.mouseData) or (("wheel", True) if w == 0x020A else None)
             if mi:
                 if mi[1]:
                     passed.append(mi[0])
@@ -85,6 +85,12 @@ def key(vk, up=False):
     return i
 
 
+def wheel(delta):
+    i = INPUT(type=0)
+    i.mi = MOUSEINPUT(0, 0, delta & 0xFFFFFFFF, 0x0800, 0, 0)
+    return i
+
+
 def xbutton(which, down):
     i = INPUT(type=0)
     i.mi = MOUSEINPUT(0, 0, which, 0x0080 if down else 0x0100, 0, 0)
@@ -99,7 +105,7 @@ rec_ready.wait(2)
 posted = []
 r = Router(posted.append, lambda m: None)
 r.set_controls(Controls((Binding("forward", Trigger("key:b")), Binding("open_wheel", Trigger("key:ctrl+space")),
-                         Binding("back", Trigger("mouse:forward")))))
+                         Binding("back", Trigger("mouse:forward")), Binding("select", Trigger("scroll:ctrl+up")))))
 cap = ik.WindowsKeyCapture(r, accept_injected=True)
 cap.start()
 time.sleep(0.2)
@@ -111,15 +117,18 @@ for vk in (A, B, C):
 send(key(CTRL), key(SPACE), key(SPACE, True), key(CTRL, True))
 send(key(SPACE), key(SPACE, True))
 send(xbutton(2, True), xbutton(2, False))
+send(key(CTRL), wheel(120), key(CTRL, True))                  # ctrl + scroll up: ours
+send(wheel(120))                                             # plain scroll: passes
 time.sleep(0.3)
 ms = (time.perf_counter() - t0) * 1000
 
 cap.stop()
 user32.PostThreadMessageW(rec.native_id, 0x12, 0, 0)
 got = [(e.kind.value, e.delta, e.action) for e in posted]
-want_past = ["a", "c", hex(CTRL), "space"]
+want_past = ["a", "c", hex(CTRL), "space", hex(CTRL), "wheel"]
 past = [p if p != "ctrl" else hex(CTRL) for p in passed]
-ok = past == want_past and got == [("rotate", 1, None), ("action", 0, "open_wheel"), ("rotate", -1, None)]
+ok = past == want_past and got == [("rotate", 1, None), ("action", 0, "open_wheel"), ("rotate", -1, None),
+                                                                                         ("click", 0, "select")]
 print(f"past Orbit: {past}\nrouter:     {got}\n{ms:.0f} ms")
 print("PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)
