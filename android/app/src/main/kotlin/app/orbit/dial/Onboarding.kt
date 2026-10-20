@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,11 +87,13 @@ private enum class PhoneChoice(val title: String, val sub: String) {
 @Composable
 fun OnboardingScreen(tick: Int, steps: (Controls, () -> Unit) -> List<SetupItem>, onDone: (openControls: Boolean) -> Unit) {
     val ctx = LocalContext.current
-    var page by remember { mutableStateOf(Page.BUDS) }
-    var buds by remember { mutableStateOf<Preset?>(Presets.CMF) }
-    var budsPicked by remember { mutableStateOf(false) }
-    var phone by remember { mutableStateOf(PhoneChoice.NONE) }
-    var disclosure by remember { mutableStateOf(false) }
+    // Saveable: the permission pages open Settings, and Android may stop Orbit meanwhile.
+    var page by rememberSaveable { mutableStateOf(Page.BUDS) }
+    var budsId by rememberSaveable { mutableStateOf<String?>(Presets.CMF.id) }
+    val buds: Preset? = Presets.byId(budsId)
+    var budsPicked by rememberSaveable { mutableStateOf(false) }
+    var phone by rememberSaveable { mutableStateOf(PhoneChoice.NONE) }
+    var disclosure by rememberSaveable { mutableStateOf(false) }
 
     fun controls(): Controls {
         val phonePreset = when (phone) {
@@ -140,9 +143,9 @@ fun OnboardingScreen(tick: Int, steps: (Controls, () -> Unit) -> List<SetupItem>
                     Page.BUDS -> {
                         item { Title("Do you have earbuds?", "Orbit can turn their buttons into a controller. Pick yours, or none.") }
                         Presets.BUDS.forEach { pr ->
-                            item { Choice(pr.name, pr.about, budsPicked && buds == pr) { buds = pr; budsPicked = true } }
+                            item { Choice(pr.name, pr.about, budsPicked && buds == pr) { budsId = pr.id; budsPicked = true } }
                         }
-                        item { Choice("No earbuds", "Use the phone's own buttons instead.", budsPicked && buds == null) { buds = null; budsPicked = true } }
+                        item { Choice("No earbuds", "Use the phone's own buttons instead.", budsPicked && buds == null) { budsId = null; budsPicked = true } }
                     }
                     Page.PHONE -> {
                         item {
