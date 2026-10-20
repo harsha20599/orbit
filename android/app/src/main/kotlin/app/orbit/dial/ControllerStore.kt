@@ -24,7 +24,7 @@ object ControllerStore {
         Controls((0 until a.length()).mapNotNull { i ->
             val j = a.getJSONObject(i)
             runCatching {
-                Binding(j.getString("action"), Trigger(j.getString("input"), Press.valueOf(j.getString("press")),
+                Binding(j.getString("action").let { if (it == "launch:com.anthropic.claude") "assistant" else it }, Trigger(j.getString("input"), Press.valueOf(j.getString("press")),
                     j.optString("device").ifEmpty { null }, j.optString("deviceName").ifEmpty { null }))
             }.getOrNull()
         }, o.optString("preset").ifEmpty { null })

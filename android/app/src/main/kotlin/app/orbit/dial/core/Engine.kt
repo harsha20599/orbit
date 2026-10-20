@@ -57,6 +57,7 @@ class Engine(
     private fun perform(a: String) {
         if (a == OrbitActions.OPEN) { if (state == State.WHEEL) cancel() else openWheel(); return }
         if (state == State.WHEEL) { cancel(); return }
+        if (a == OrbitActions.ASSISTANT) { actions.assistant(); return }
         when (val g = OrbitSettings.parseGesture(a)) {
             is Gesture.Media -> actions.media(g.command)
             is Gesture.Launch -> actions.launch(g.pkg)
@@ -236,6 +237,8 @@ interface Actions {
     fun nudge(direction: Int)
     /** Press the front app's play / pause control (by label), else tap the screen centre. */
     fun tapPlayPause()
+    /** Claude if installed, else the phone's assistant. */
+    fun assistant() {}
     /** Media volume up / down by [steps] (controllers in the Volume tool). */
     fun stepVolume(steps: Int) {}
 }

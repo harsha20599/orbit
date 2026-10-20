@@ -75,11 +75,11 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         engine = buildEngine()
         prefsListener = SettingsStore.listen(this) {
             main.removeCallbacks(rebuild)
-        Orbit.onBackTapNeed = null
+        Orbit.onMotionNeed = null
         screenRx?.let { runCatching { unregisterReceiver(it) } }
-        tapSensorOn(false); main.postDelayed(rebuild, 150)          // one rebuild per save
+        setSensors(false, false, false); main.postDelayed(rebuild, 150)          // one rebuild per save
         }
-        Orbit.onBackTapNeed = { main.post { updateBackTap() } }
+        Orbit.onMotionNeed = { main.post { updateBackTap() } }
         screenRx = object : android.content.BroadcastReceiver() {
             override fun onReceive(c: android.content.Context, i: Intent) { updateBackTap() }
         }.also {
@@ -163,41 +163,68 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
 
     private var controlsListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
 
-    // ---- back taps from the accelerometer: only while the screen is on and a control
-    // (or the setup screen's test) uses them
+    // ---- motion triggers (back taps, chop, twist): sensors run only while the screen is
+    // on and a control (or the setup screen's test) uses them
     private var screenRx: android.content.BroadcastReceiver? = null
     private val sensors by lazy { getSystemService(android.hardware.SensorManager::class.java) }
     private val tapDetector = app.orbit.dial.core.BackTapDetector { n ->
         main.post { Orbit.pulse(if (n >= 3) "backtap:2" else "backtap:1") }
     }
-    private var tapListening = false
-    private val tapListener = object : android.hardware.SensorEventListener {
+    private val chopDetector = app.orbit.dial.core.ChopDetector { main.post { Orbit.pulse("motion:chop") } }
+    private val twistDetector = app.orbit.dial.core.TwistDetector { main.post { Orbit.pulse("motion:twist") } }
+    private var accTaps = false
+    private var accChop = false
+    private var gyroOn = false
+    private val accListener = object : android.hardware.SensorEventListener {
         override fun onSensorChanged(e: android.hardware.SensorEvent) {
-            tapDetector.sample(e.values[0], e.values[1], e.values[2], e.timestamp / 1_000_000)
+            val t = e.timestamp / 1_000_000
+            if (accTaps) tapDetector.sample(e.values[0], e.values[1], e.values[2], t)
+            if (accChop) chopDetector.sample(e.values[0], e.values[1], e.values[2], t)
+        }
+        override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+    }
+    private val gyroListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(e: android.hardware.SensorEvent) {
+            twistDetector.sample(e.values[0], e.values[1], e.values[2], e.timestamp / 1_000_000)
         }
         override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
     }
 
     private fun updateBackTap() {
         val screenOn = getSystemService(android.os.PowerManager::class.java).isInteractive
-        val want = screenOn && Orbit.enabled(this) && Orbit.backTapDetect(this) &&
-            (Orbit.backTapTesting || Orbit.hub.controls.uses("backtap:"))
+        val active = screenOn && Orbit.enabled(this)
+        val c = Orbit.hub.controls
+        val taps = active && Orbit.backTapDetect(this) && (Orbit.motionTesting || c.uses("backtap:"))
+        val chop = active && (Orbit.motionTesting || c.uses("motion:chop"))
+        val twist = active && (Orbit.motionTesting || c.uses("motion:twist"))
         tapDetector.threshold = when (Orbit.backTapSensitivity(this)) {
             "low" -> app.orbit.dial.core.BackTapDetector.SENS_LOW
             "high" -> app.orbit.dial.core.BackTapDetector.SENS_HIGH
             else -> app.orbit.dial.core.BackTapDetector.SENS_MEDIUM
         }
-        tapSensorOn(want)
+        setSensors(taps, chop, twist)
     }
 
-    private fun tapSensorOn(on: Boolean) {
-        if (on == tapListening) return
-        val acc = sensors?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
-        if (on && acc == null) { Orbit.log("no accelerometer: back taps only through the phone's own setting"); return }
-        tapListening = on
-        if (on) { tapDetector.reset(); sensors.registerListener(tapListener, acc, android.hardware.SensorManager.SENSOR_DELAY_FASTEST, main) }
-        else sensors?.unregisterListener(tapListener)
-        Orbit.log(if (on) "back-tap detection on" else "back-tap detection off")
+    private fun setSensors(taps: Boolean, chop: Boolean, twist: Boolean) {
+        val accWas = accTaps || accChop
+        if (taps && !accTaps) tapDetector.reset()
+        if (chop && !accChop) chopDetector.reset()
+        accTaps = taps; accChop = chop
+        val accNow = taps || chop
+        if (accNow != accWas) {
+            val acc = sensors?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+            if (accNow && acc != null) sensors.registerListener(accListener, acc, android.hardware.SensorManager.SENSOR_DELAY_FASTEST, main)
+            else sensors?.unregisterListener(accListener)
+            if (accNow && acc == null) Orbit.log("no accelerometer: no back taps or chops")
+        }
+        if (twist != gyroOn) {
+            val gyro = sensors?.getDefaultSensor(android.hardware.Sensor.TYPE_GYROSCOPE)
+            gyroOn = twist && gyro != null
+            if (gyroOn) { twistDetector.reset(); sensors.registerListener(gyroListener, gyro, android.hardware.SensorManager.SENSOR_DELAY_GAME, main) }
+            else sensors?.unregisterListener(gyroListener)
+            if (twist && gyro == null) Orbit.log("no gyroscope: no twist")
+        }
+        Orbit.log("motion sensors: taps=$accTaps chop=$accChop twist=$gyroOn")
     }
 
 
@@ -384,6 +411,12 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         val i = packageManager.getLaunchIntentForPackage(pkg)
             ?: Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$pkg"))
         runCatching { startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
+    override fun assistant() {
+        val claude = packageManager.getLaunchIntentForPackage("com.anthropic.claude")
+        runCatching { startActivity((claude ?: Intent(Intent.ACTION_ASSIST)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            .onFailure { Orbit.log("no assistant to open: ${it.message}") }
     }
 
     override fun global(action: String) {

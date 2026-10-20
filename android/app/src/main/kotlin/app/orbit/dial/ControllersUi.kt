@@ -192,7 +192,6 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
     var note by remember { mutableStateOf<String?>(null) }
     var presets by remember { mutableStateOf(false) }
     var addFn by remember { mutableStateOf(false) }
-    var pickApp by remember { mutableStateOf(false) }
     var discard by remember { mutableStateOf(false) }
     var lit by remember { mutableStateOf<String?>(null) }
     var litAt by remember { mutableLongStateOf(0L) }
@@ -287,7 +286,7 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
                     ListItem(colors = clear, modifier = Modifier.clickable { addFn = true },
                         leadingContent = { RowIcon(R.drawable.ic_plus, MaterialTheme.colorScheme.primary) },
                         headlineContent = { Text("Add a function", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) },
-                        supportingContent = { Text("Previous tool, play / pause, home, screenshot, open an app…",
+                        supportingContent = { Text("Open assistant, previous tool, custom command",
                             color = MaterialTheme.colorScheme.onSurfaceVariant) })
                 }
                 if (draft.triggers(OrbitActions.OPEN).isEmpty()) Hint("Nothing opens the menu yet, so you can't switch tools.", warn = true)
@@ -304,13 +303,17 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
                 OrbitActions.EXTRA.filter { it !in draft.actions }.forEach { a ->
-                    Text(if (a == "launch:") "Open an app…" else OrbitActions.label(a),
-                        Modifier.fillMaxWidth().clickable { addFn = false; if (a == "launch:") pickApp = true else editing = a }
-                            .padding(vertical = 12.dp), style = MaterialTheme.typography.bodyLarge)
+                    val desktop = a in OrbitActions.DESKTOP_ONLY
+                    ListItem(colors = clear,
+                        modifier = Modifier.fillMaxWidth().clickable(enabled = !desktop) { addFn = false; editing = a },
+                        headlineContent = { Text(OrbitActions.label(a), fontWeight = FontWeight.Medium,
+                            color = if (desktop) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface) },
+                        supportingContent = { Text(if (desktop) "Coming on Windows and Mac" else OrbitActions.hint(a),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant) })
                 }
+                if (OrbitActions.EXTRA.none { it !in draft.actions }) Text("All added.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }, confirmButton = {}, dismissButton = { TextButton({ addFn = false }) { Text("Cancel") } })
-    if (pickApp) AppPicker(onDismiss = { pickApp = false }) { pkg -> pickApp = false; editing = "launch:$pkg" }
     if (discard) AlertDialog(onDismissRequest = { discard = false },
         title = { Text("Discard changes?") }, text = { Text("Your changes to the controls aren't saved.") },
         confirmButton = { TextButton({ discard = false; onClose() }) { Text("Discard", color = MaterialTheme.colorScheme.error) } },
@@ -323,6 +326,7 @@ private enum class Category(val title: String, val about: String, val icon: Int)
     BACK("Tapping on back", "Double or triple tap the back of the phone", R.drawable.ic_bolt),
     VOLUME("Volume keys", "The phone's, a selfie stick's or a remote's", R.drawable.ic_volume),
     MEDIA("Media buttons", "Earbuds, AirPods, the CMF dial, speakers, wired earphones", R.drawable.ic_play),
+    MOTION("Motion gestures", "Chop or twist the phone", R.drawable.ic_scroll),
     MOUSE("Mouse keys", "The side buttons of a mouse", R.drawable.ic_app),
     KEYBOARD("Keyboard shortcut", "Any key or combination on a keyboard, knob or game pad", R.drawable.ic_keyboard),
 }
@@ -331,6 +335,7 @@ private val CATALOG: Map<Category, List<String>> = mapOf(
     Category.BACK to listOf("backtap:1", "backtap:2"),
     Category.VOLUME to listOf("key:24", "key:25", "key:164"),
     Category.MEDIA to listOf("media:play", "media:next", "media:prev", "media:hold", "vol:up", "vol:down", "media:hook"),
+    Category.MOTION to listOf("motion:chop", "motion:twist"),
     Category.MOUSE to listOf("mouse:back", "mouse:forward"),
     Category.KEYBOARD to listOf("key:62", "key:66", "key:19", "key:20", "key:21", "key:22", "key:92", "key:93") + (131..142).map { "key:$it" },
 )
@@ -386,6 +391,7 @@ private fun FunctionScreen(action: String, controls: Controls, onDone: (Controls
                 tab == 1 && cc == null -> item { Recorder(onUse = ::add) }
                 cc != null -> {
                     if (cc == Category.BACK) item { BackTapSetup() }
+                    if (cc == Category.MOTION) item { MotionTest() }
                     if (cc == Category.KEYBOARD) item {
                         Hint("Common keys below. For any other key or a combination like Ctrl+Space, use Record.")
                         Spacer(Modifier.height(8.dp))
@@ -543,8 +549,8 @@ private fun BackTapSetup() {
     var now by remember { mutableLongStateOf(Clock.now()) }
     DisposableEffect(Unit) {
         BackTapActivity.setAvailable(ctx, true)          // so the phone's own setting can list it now
-        Orbit.backTapTesting = true
-        onDispose { Orbit.backTapTesting = false }
+        Orbit.motionTesting = true
+        onDispose { Orbit.motionTesting = false }
     }
     LaunchedEffect(Unit) { while (true) { now = Clock.now(); delay(100) } }
     CaptureButtons { c -> if (c.input.startsWith("backtap:")) { heard = c.input; heardAt = Clock.now() } }
@@ -555,7 +561,7 @@ private fun BackTapSetup() {
             supportingContent = { Text("Works on any phone, using its motion sensor while the screen is on.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant) },
             trailingContent = { androidx.compose.material3.Switch(detect, {
-                detect = it; Orbit.prefs(ctx).edit().putBoolean("backtap_detect", it).apply(); Orbit.backTapTesting = true
+                detect = it; Orbit.prefs(ctx).edit().putBoolean("backtap_detect", it).apply(); Orbit.motionTesting = true
             }) })
         if (detect) {
             Div()
@@ -565,7 +571,7 @@ private fun BackTapSetup() {
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("low" to "Firm taps", "medium" to "Normal", "high" to "Light taps").forEach { (k, l) ->
                         FilterChip(sens == k, {
-                            sens = k; Orbit.prefs(ctx).edit().putString("backtap_sens", k).apply(); Orbit.backTapTesting = true
+                            sens = k; Orbit.prefs(ctx).edit().putString("backtap_sens", k).apply(); Orbit.motionTesting = true
                         }, label = { Text(l) })
                     }
                 }
@@ -581,6 +587,28 @@ private fun BackTapSetup() {
                 "Tap with a fingertip near the camera. Three taps is a triple tap.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant) })
     }
+    Spacer(Modifier.height(12.dp))
+}
+
+/** Chop / twist: a live test, so people find the right force before choosing. */
+@Composable
+private fun MotionTest() {
+    var heard by remember { mutableStateOf<String?>(null) }
+    var heardAt by remember { mutableLongStateOf(0L) }
+    var now by remember { mutableLongStateOf(Clock.now()) }
+    DisposableEffect(Unit) { Orbit.motionTesting = true; onDispose { Orbit.motionTesting = false } }
+    LaunchedEffect(Unit) { while (true) { now = Clock.now(); delay(100) } }
+    CaptureButtons { c -> if (c.input.startsWith("motion:")) { heard = c.input; heardAt = Clock.now() } }
+    val fresh = heard != null && now - heardAt < 2500
+    Group {
+        ListItem(colors = ListItemDefaults.colors(containerColor = if (fresh) SetGreen.copy(alpha = 0.16f) else Color.Transparent),
+            leadingContent = { SetMark(fresh) },
+            headlineContent = { Text(if (fresh) "Heard: ${Inputs.label(heard!!).lowercase()}" else "Try it", fontWeight = FontWeight.Medium) },
+            supportingContent = { Text(if (fresh) "Pick it below to use it." else
+                "Chop: hold the phone firmly and chop down twice, like a knife. Twist: turn your wrist back and forth twice, fast.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant) })
+    }
+    Hint("Works while the screen is on.")
     Spacer(Modifier.height(12.dp))
 }
 

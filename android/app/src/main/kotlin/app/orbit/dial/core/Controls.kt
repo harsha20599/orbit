@@ -38,7 +38,7 @@ data class Trigger(val input: String, val press: Press = Press.TAP, val device: 
 data class Binding(val action: String, val trigger: Trigger)
 
 object Inputs {
-    fun counted(input: String) = input.startsWith("vol:") || input.startsWith("backtap:") ||
+    fun counted(input: String) = input.startsWith("vol:") || input.startsWith("backtap:") || input.startsWith("motion:") ||
         (input.startsWith("media:") && input != "media:hook")
 
     private val keyNames = mapOf(
@@ -69,6 +69,8 @@ object Inputs {
             "media:hook" -> "Cable button"
             "vol:up" -> "Dial forward / headphone volume +"
             "vol:down" -> "Dial back / headphone volume −"
+            "motion:chop" -> "Chop twice"
+            "motion:twist" -> "Twist twice"
             "backtap:1" -> "Back double tap"
             "backtap:2" -> "Back triple tap"
             else -> input
@@ -83,15 +85,19 @@ object OrbitActions {
     const val FORWARD = "forward"
     /** The functions every setup shows, in this order. */
     val CORE = listOf(SELECT, OPEN, BACK, FORWARD)
-    /** Functions a user can add. */
-    val EXTRA = listOf("last_tool", "media:play_pause", "media:next", "media:previous", "launch:",
-        "global:back", "global:home", "global:recents", "global:notifications", "global:screenshot", "global:lock")
+    const val ASSISTANT = "assistant"
+    const val CUSTOM = "custom_command"
+    /** Functions a user can add (custom commands: Windows and Mac). */
+    val EXTRA = listOf(ASSISTANT, CUSTOM, "last_tool")
+    val DESKTOP_ONLY = setOf(CUSTOM)
 
     fun label(a: String): String = when {
-        a == SELECT -> "Select"
+        a == SELECT -> "Single press / Select"
         a == OPEN -> "Open menu"
-        a == BACK -> "Move left"
-        a == FORWARD -> "Move right"
+        a == BACK -> "Previous"
+        a == FORWARD -> "Next"
+        a == ASSISTANT -> "Open assistant"
+        a == CUSTOM -> "Custom command"
         a == "last_tool" -> "Previous tool"
         a == "media:play_pause" -> "Play / pause"
         a == "media:next" -> "Next track"
@@ -112,6 +118,9 @@ object OrbitActions {
         OPEN -> "Shows the wheel of tools. Again closes it."
         BACK -> "Previous item. In a tool: back, quieter, previous slide…"
         FORWARD -> "Next item. In a tool: next reel, louder, next slide…"
+        ASSISTANT -> "Claude, or your phone's assistant if Claude isn't installed."
+        CUSTOM -> "Runs a keyboard shortcut or command. On Windows and Mac."
+        "last_tool" -> "Back to the tool you used before."
         else -> ""
     }
 }
@@ -144,7 +153,7 @@ object Presets {
     val CMF = p("cmf", "CMF Buds Pro 2", "Turn the case dial to move; press, double, triple, hold.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
         b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"),
-        b("last_tool", "media:prev"), b("launch:com.anthropic.claude", "media:hold"))
+        b("last_tool", "media:prev"), b(OrbitActions.ASSISTANT, "media:hold"))
     val EARBUDS = p("earbuds", "AirPods & other earbuds", "Press or tap the earbud once, twice, three times.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.FORWARD, "media:next"), b(OrbitActions.OPEN, "media:prev"))
     val SPEAKER = p("speaker", "Speaker or headphones with buttons", "Play, next / previous and volume buttons.",

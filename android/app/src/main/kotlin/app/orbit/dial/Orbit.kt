@@ -58,7 +58,7 @@ object Orbit {
         val c = ControllerStore.load(ctx)
         hub.set(c)
         volumeIsDial = hub.volumeIsDial()
-        onBackTapNeed?.invoke()
+        onMotionNeed?.invoke()
         log("controls: ${c.bindings.joinToString { "${it.action}<-${it.trigger.label()}" }}")
     }
 
@@ -71,9 +71,9 @@ object Orbit {
 
     // ---- back taps: Orbit's own detector (any phone) and the phone's (Pixel / Samsung)
     // can both fire for one gesture; the second within a moment is the same tap.
-    @Volatile var backTapTesting = false
-        set(v) { field = v; onBackTapNeed?.invoke() }
-    var onBackTapNeed: (() -> Unit)? = null
+    @Volatile var motionTesting = false
+        set(v) { field = v; onMotionNeed?.invoke() }
+    var onMotionNeed: (() -> Unit)? = null
     private val lastBackTap = HashMap<String, Long>()
     fun backTapDetect(ctx: Context) = prefs(ctx).getBoolean("backtap_detect", true)
     fun backTapSensitivity(ctx: Context) = prefs(ctx).getString("backtap_sens", "medium") ?: "medium"
