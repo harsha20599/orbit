@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- back-tap detection: knocks last ~15 ms, so the accelerometer above 200 Hz -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
     <queries>
         <package android:name="com.anthropic.claude" />

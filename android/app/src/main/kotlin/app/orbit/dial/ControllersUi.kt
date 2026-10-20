@@ -160,13 +160,15 @@ private fun CaptureButtons(onPress: (Orbit.Captured) -> Unit) {
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) Orbit.captureUntil = 0L
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_STOP) Orbit.captureUntil = 0L
         }
         lifecycle.addObserver(obs)
         onDispose { lifecycle.removeObserver(obs); Orbit.captureUntil = 0L }
     }
     LaunchedEffect(lifecycle) {
-        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+        // STARTED, not RESUMED: a back tap opens Orbit's invisible entry on top for a
+        // moment, which pauses this screen; leaving the app stops it
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
             try { while (true) { Orbit.captureUntil = Clock.now() + 1500; delay(500) } } finally { Orbit.captureUntil = 0L }
         }
     }
@@ -318,7 +320,7 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
 // =================================================================== one function
 
 private enum class Category(val title: String, val about: String, val icon: Int) {
-    BACK("Tapping on back", "Pixel Quick Tap, Samsung RegiStar", R.drawable.ic_bolt),
+    BACK("Tapping on back", "Double or triple tap the back of the phone", R.drawable.ic_bolt),
     VOLUME("Volume keys", "The phone's, a selfie stick's or a remote's", R.drawable.ic_volume),
     MEDIA("Media buttons", "Earbuds, AirPods, the CMF dial, speakers, wired earphones", R.drawable.ic_play),
     MOUSE("Mouse keys", "The side buttons of a mouse", R.drawable.ic_app),
@@ -383,12 +385,13 @@ private fun FunctionScreen(action: String, controls: Controls, onDone: (Controls
             when {
                 tab == 1 && cc == null -> item { Recorder(onUse = ::add) }
                 cc != null -> {
-                    if (cc == Category.BACK) item { BackTapHelp() }
+                    if (cc == Category.BACK) item { BackTapSetup() }
                     if (cc == Category.KEYBOARD) item {
                         Hint("Common keys below. For any other key or a combination like Ctrl+Space, use Record.")
                         Spacer(Modifier.height(8.dp))
                     }
                     item { InputList(CATALOG.getValue(cc), c, action) { asking = it } }
+                    if (cc == Category.BACK) item { Spacer(Modifier.height(18.dp)); BackTapHelp() }
                 }
                 else -> {
                     item {
@@ -528,9 +531,64 @@ private fun Recorder(onUse: (Trigger) -> Unit) {
     }
 }
 
+/** Orbit's own detection: on / off, sensitivity, and a live test. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun BackTapSetup() {
+    val ctx = LocalContext.current
+    var detect by remember { mutableStateOf(Orbit.backTapDetect(ctx)) }
+    var sens by remember { mutableStateOf(Orbit.backTapSensitivity(ctx)) }
+    var heard by remember { mutableStateOf<String?>(null) }
+    var heardAt by remember { mutableLongStateOf(0L) }
+    var now by remember { mutableLongStateOf(Clock.now()) }
+    DisposableEffect(Unit) {
+        BackTapActivity.setAvailable(ctx, true)          // so the phone's own setting can list it now
+        Orbit.backTapTesting = true
+        onDispose { Orbit.backTapTesting = false }
+    }
+    LaunchedEffect(Unit) { while (true) { now = Clock.now(); delay(100) } }
+    CaptureButtons { c -> if (c.input.startsWith("backtap:")) { heard = c.input; heardAt = Clock.now() } }
+
+    Group {
+        ListItem(colors = clear,
+            headlineContent = { Text("Orbit detects back taps", fontWeight = FontWeight.Medium) },
+            supportingContent = { Text("Works on any phone, using its motion sensor while the screen is on.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            trailingContent = { androidx.compose.material3.Switch(detect, {
+                detect = it; Orbit.prefs(ctx).edit().putBoolean("backtap_detect", it).apply(); Orbit.backTapTesting = true
+            }) })
+        if (detect) {
+            Div()
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+                Text("Sensitivity", style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.height(6.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("low" to "Firm taps", "medium" to "Normal", "high" to "Light taps").forEach { (k, l) ->
+                        FilterChip(sens == k, {
+                            sens = k; Orbit.prefs(ctx).edit().putString("backtap_sens", k).apply(); Orbit.backTapTesting = true
+                        }, label = { Text(l) })
+                    }
+                }
+            }
+        }
+        Div()
+        val fresh = heard != null && now - heardAt < 2500
+        ListItem(colors = ListItemDefaults.colors(containerColor = if (fresh) SetGreen.copy(alpha = 0.16f) else Color.Transparent),
+            leadingContent = { SetMark(fresh) },
+            headlineContent = { Text(if (fresh) "Heard: ${Inputs.label(heard!!).lowercase()}" else "Try it: tap the back twice, quickly",
+                fontWeight = FontWeight.Medium) },
+            supportingContent = { Text(if (fresh) "Pick it below to use it." else
+                "Tap with a fingertip near the camera. Three taps is a triple tap.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant) })
+    }
+    Spacer(Modifier.height(12.dp))
+}
+
 @Composable
 private fun BackTapHelp() {
     val ctx = LocalContext.current
+    Text("Or use your phone's own back tap", style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp))
     Group {
         ListItem(colors = clear, headlineContent = { Text("Pixel", fontWeight = FontWeight.Medium) },
             supportingContent = { Text("Settings → System → Gestures → Quick Tap → Open app → Orbit back tap.",
@@ -544,8 +602,7 @@ private fun BackTapHelp() {
             leadingContent = { RowIcon(R.drawable.ic_settings, MaterialTheme.colorScheme.primary) },
             headlineContent = { Text("Open phone settings", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) })
     }
-    Hint("The “Orbit back tap” entries show up in the phone's app list once you save a back tap here. Phones without back tap can't use it.")
-    Spacer(Modifier.height(12.dp))
+    Hint("Usually more reliable on those phones. If you use it, you can switch Orbit's detection off above.")
 }
 
 @Composable

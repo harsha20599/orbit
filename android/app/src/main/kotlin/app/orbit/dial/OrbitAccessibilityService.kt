@@ -74,7 +74,18 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         overlay = OverlayController(this)
         engine = buildEngine()
         prefsListener = SettingsStore.listen(this) {
-            main.removeCallbacks(rebuild); main.postDelayed(rebuild, 150)          // one rebuild per save
+            main.removeCallbacks(rebuild)
+        Orbit.onBackTapNeed = null
+        screenRx?.let { runCatching { unregisterReceiver(it) } }
+        tapSensorOn(false); main.postDelayed(rebuild, 150)          // one rebuild per save
+        }
+        Orbit.onBackTapNeed = { main.post { updateBackTap() } }
+        screenRx = object : android.content.BroadcastReceiver() {
+            override fun onReceive(c: android.content.Context, i: Intent) { updateBackTap() }
+        }.also {
+            registerReceiver(it, android.content.IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
+            })
         }
         Orbit.reloadControls(this)
         controlsListener = ControllerStore.listen(this) { main.post { Orbit.reloadControls(this) } }
@@ -151,6 +162,43 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
     }
 
     private var controlsListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    // ---- back taps from the accelerometer: only while the screen is on and a control
+    // (or the setup screen's test) uses them
+    private var screenRx: android.content.BroadcastReceiver? = null
+    private val sensors by lazy { getSystemService(android.hardware.SensorManager::class.java) }
+    private val tapDetector = app.orbit.dial.core.BackTapDetector { n ->
+        main.post { Orbit.pulse(if (n >= 3) "backtap:2" else "backtap:1") }
+    }
+    private var tapListening = false
+    private val tapListener = object : android.hardware.SensorEventListener {
+        override fun onSensorChanged(e: android.hardware.SensorEvent) {
+            tapDetector.sample(e.values[0], e.values[1], e.values[2], e.timestamp / 1_000_000)
+        }
+        override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+    }
+
+    private fun updateBackTap() {
+        val screenOn = getSystemService(android.os.PowerManager::class.java).isInteractive
+        val want = screenOn && Orbit.enabled(this) && Orbit.backTapDetect(this) &&
+            (Orbit.backTapTesting || Orbit.hub.controls.uses("backtap:"))
+        tapDetector.threshold = when (Orbit.backTapSensitivity(this)) {
+            "low" -> app.orbit.dial.core.BackTapDetector.SENS_LOW
+            "high" -> app.orbit.dial.core.BackTapDetector.SENS_HIGH
+            else -> app.orbit.dial.core.BackTapDetector.SENS_MEDIUM
+        }
+        tapSensorOn(want)
+    }
+
+    private fun tapSensorOn(on: Boolean) {
+        if (on == tapListening) return
+        val acc = sensors?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+        if (on && acc == null) { Orbit.log("no accelerometer: back taps only through the phone's own setting"); return }
+        tapListening = on
+        if (on) { tapDetector.reset(); sensors.registerListener(tapListener, acc, android.hardware.SensorManager.SENSOR_DELAY_FASTEST, main) }
+        else sensors?.unregisterListener(tapListener)
+        Orbit.log(if (on) "back-tap detection on" else "back-tap detection off")
+    }
 
 
     // ================================================================ Actions

@@ -37,7 +37,7 @@ object ControllerStore {
                 .put("device", b.trigger.device ?: "").put("deviceName", b.trigger.deviceName ?: ""))
         }
         Orbit.prefs(ctx).edit().putString(KEY, JSONObject().put("bindings", a).put("preset", c.preset ?: "").toString()).apply()
-        BackTapActivity.setAvailable(ctx, c.uses("backtap:"))
+        BackTapActivity.setAvailable(ctx, c.uses("backtap:"))   // the phone's back-tap setting lists them only while used
     }
 
     fun listen(ctx: Context, onChange: () -> Unit): SharedPreferences.OnSharedPreferenceChangeListener {

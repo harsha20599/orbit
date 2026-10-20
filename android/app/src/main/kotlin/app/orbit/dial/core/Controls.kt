@@ -69,8 +69,8 @@ object Inputs {
             "media:hook" -> "Cable button"
             "vol:up" -> "Dial forward / headphone volume +"
             "vol:down" -> "Dial back / headphone volume −"
-            "backtap:1" -> "Back tap"
-            "backtap:2" -> "Back tap 2"
+            "backtap:1" -> "Back double tap"
+            "backtap:2" -> "Back triple tap"
             else -> input
         }
     }

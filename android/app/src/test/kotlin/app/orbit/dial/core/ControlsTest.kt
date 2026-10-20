@@ -101,7 +101,7 @@ class ControlsTest {
     @Test fun labels() {
         assertEquals("Volume + · double tap", Trigger("key:24", Press.DOUBLE).label())
         assertEquals("Ctrl+Shift+Space · tap", Trigger("key:62+ctrl+shift").label())
-        assertEquals("Back tap", Trigger("backtap:1").label())
+        assertEquals("Back double tap", Trigger("backtap:1").label())
         assertEquals("Enter · hold on K380", Trigger("key:66", Press.HOLD, "dev", "K380").label())
     }
 

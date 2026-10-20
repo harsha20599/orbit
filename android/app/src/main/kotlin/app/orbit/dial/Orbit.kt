@@ -58,6 +58,7 @@ object Orbit {
         val c = ControllerStore.load(ctx)
         hub.set(c)
         volumeIsDial = hub.volumeIsDial()
+        onBackTapNeed?.invoke()
         log("controls: ${c.bindings.joinToString { "${it.action}<-${it.trigger.label()}" }}")
     }
 
@@ -68,8 +69,22 @@ object Orbit {
         return r
     }
 
+    // ---- back taps: Orbit's own detector (any phone) and the phone's (Pixel / Samsung)
+    // can both fire for one gesture; the second within a moment is the same tap.
+    @Volatile var backTapTesting = false
+        set(v) { field = v; onBackTapNeed?.invoke() }
+    var onBackTapNeed: (() -> Unit)? = null
+    private val lastBackTap = HashMap<String, Long>()
+    fun backTapDetect(ctx: Context) = prefs(ctx).getBoolean("backtap_detect", true)
+    fun backTapSensitivity(ctx: Context) = prefs(ctx).getString("backtap_sens", "medium") ?: "medium"
+
     /** An input the device counts itself (earbud gesture, dial turn, back tap). Main thread. */
     fun pulse(input: String, n: Int = 1, source: String? = null): Boolean {
+        if (input.startsWith("backtap:")) {
+            val t = Clock.now()
+            if (t - (lastBackTap[input] ?: 0L) < 700) return true
+            lastBackTap[input] = t
+        }
         if (input.startsWith("media:")) lastPress = Clock.now()
         if (capturing()) { capture(Captured(input, true, null, null, counted = true)); return true }
         log("in  $input${if (n > 1) " x$n" else ""}")
