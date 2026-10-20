@@ -200,13 +200,13 @@ class EngineTest {
 
     @Test fun configurationOpensWheelMovesAndSelects() {
         val e = engine()
-        val hub = ConfigHub { e.handle(it) }
-        hub.set(listOf(Config.keys("r", "Remote", "d", listOf(Input("key:1", "A"), Input("key:2", "B")))))
-        // defaults for 2 buttons: B hold = open, A tap = forward, A hold = select
-        hub.onKey("d", "key:2", true, now); now += PressRecognizer.HOLD_MS; hub.tick(now); hub.onKey("d", "key:2", false, now)
+        val hub = ControlsHub { e.handle(it) }
+        hub.set(Presets.VOLUME_KEYS.controls)
+        // volume keys: + hold = open, + tap = right, − hold = select
+        hub.onKey("builtin", "key:24", true, now); now += PressRecognizer.HOLD_MS; hub.tick(now); hub.onKey("builtin", "key:24", false, now)
         assertEquals(Engine.State.WHEEL, e.state)
-        hub.onKey("d", "key:1", true, now); now += 60; hub.onKey("d", "key:1", false, now)
-        hub.onKey("d", "key:1", true, now); now += PressRecognizer.HOLD_MS; hub.tick(now)
+        hub.onKey("builtin", "key:24", true, now); now += 60; hub.onKey("builtin", "key:24", false, now)
+        hub.onKey("builtin", "key:25", true, now); now += PressRecognizer.HOLD_MS; hub.tick(now)
         assertEquals(Engine.State.TOOL, e.state)
         assertEquals(e.wheel[1].id, e.tool.id)
     }

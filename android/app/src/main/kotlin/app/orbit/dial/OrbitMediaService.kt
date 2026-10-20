@@ -25,7 +25,6 @@ import android.os.Looper
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
 import app.orbit.dial.core.Clock
-import app.orbit.dial.core.Config
 import app.orbit.dial.core.DialEvent
 import app.orbit.dial.core.Kind
 import app.orbit.dial.core.VolumeDial
@@ -101,8 +100,7 @@ class OrbitMediaService : Service() {
                 am.setStreamVolume(stream, idx, 0)
             }
         }, { ev -> main.post {
-                Orbit.pulse(Config.HEADPHONES, if (ev.delta > 0) app.orbit.dial.core.Presets.UP else app.orbit.dial.core.Presets.DOWN,
-                    if (ev.delta > 0) "Volume up / turn forward" else "Volume down / turn back", kotlin.math.abs(ev.delta), ev.source)
+                Orbit.pulse(if (ev.delta > 0) "vol:up" else "vol:down", kotlin.math.abs(ev.delta), ev.source)
             } }, "android-volume",
             streamSteps = am.getStreamMaxVolume(stream).coerceAtLeast(1))
         dial.rebase()
@@ -177,11 +175,8 @@ class OrbitMediaService : Service() {
     private fun hookKey(ev: KeyEvent) {
         val down = ev.action == KeyEvent.ACTION_DOWN
         if (down && ev.repeatCount > 0) return
-        if (Orbit.capturing()) {
-            Orbit.capture(Orbit.Captured(app.orbit.dial.core.Presets.HOOK, down, Config.HEADPHONES, "Earbuds & headphones", "Cable button"))
-            return
-        }
-        Orbit.key(Config.HEADPHONES, app.orbit.dial.core.Presets.HOOK, down)
+        if (Orbit.capturing()) { Orbit.capture(Orbit.Captured("media:hook", down, null, null)); return }
+        Orbit.key("headphones", "media:hook", down)
     }
 
     private var lastPressAt = 0L
@@ -193,12 +188,7 @@ class OrbitMediaService : Service() {
         if (kind == lastPressKind && now - lastPressAt < 150) return
         lastPressAt = now; lastPressKind = kind
         Orbit.log("press: $how")
-        val (input, label) = when (kind) {
-            Kind.DOUBLE -> app.orbit.dial.core.Presets.NEXT to "Double press / next track"
-            Kind.TRIPLE -> app.orbit.dial.core.Presets.PREV to "Triple press / previous track"
-            else -> app.orbit.dial.core.Presets.PLAY to "Press / play-pause"
-        }
-        Orbit.pulse(Config.HEADPHONES, input, label)
+        Orbit.pulse(when (kind) { Kind.DOUBLE -> "media:next"; Kind.TRIPLE -> "media:prev"; else -> "media:play" })
     }
 
     private fun startSilence() {

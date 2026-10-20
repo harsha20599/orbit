@@ -15,8 +15,7 @@ class BackTapActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val second = intent?.component?.className?.endsWith("BackTap2") == true
-        if (Orbit.enabled(this)) Orbit.pulse(Orbit.BACKTAP, if (second) INPUT_2 else INPUT_1,
-            if (second) "Back tap 2" else "Back tap")
+        if (Orbit.enabled(this)) Orbit.pulse(if (second) INPUT_2 else INPUT_1)
         finish()
         if (Build.VERSION.SDK_INT >= 34) overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
         else @Suppress("DEPRECATION") overridePendingTransition(0, 0)

@@ -2,6 +2,7 @@ package app.orbit.dial
 
 import android.content.Intent
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -34,6 +35,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -42,10 +45,13 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.RadioButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -53,6 +59,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,391 +77,27 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.repeatOnLifecycle
 import app.orbit.dial.core.Clock
-import app.orbit.dial.core.Config
-import app.orbit.dial.core.ConfigHub
-import app.orbit.dial.core.Input
+import app.orbit.dial.core.Controls
+import app.orbit.dial.core.ControlsHub
+import app.orbit.dial.core.Inputs
 import app.orbit.dial.core.Kind
 import app.orbit.dial.core.OrbitActions
-import app.orbit.dial.core.Presets
 import app.orbit.dial.core.Press
+import app.orbit.dial.core.PressRecognizer
+import app.orbit.dial.core.Presets
 import app.orbit.dial.core.Trigger
-import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 
 private val clear @Composable get() = ListItemDefaults.colors(containerColor = Color.Transparent)
+private val SetGreen = Color(0xFF3DDC97)
 
-@Composable
-private fun Div() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+@Composable private fun Div() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
 @Composable
 private fun RowIcon(res: Int, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) =
     Icon(painterResource(res), null, Modifier.size(20.dp), tint = tint)
-
-private fun iconFor(c: Config) = when {
-    c.isHeadphones -> R.drawable.ic_volume
-    c.device == Config.BACKTAP -> R.drawable.ic_bolt
-    c.device == Config.BUILTIN -> R.drawable.ic_settings
-    else -> R.drawable.ic_keyboard
-}
-
-/** "Double press" / "Volume − · hold": how a trigger reads to a person. */
-private fun Config.describe(t: Trigger?): String {
-    t ?: return "Not set"
-    val i = input(t.input) ?: return "Not set"
-    return if (i.counted) i.label else "${i.label} · ${t.press.label.lowercase()}"
-}
-
-private fun Config.summary(): String =
-    if (isHeadphones) Presets.byId(preset).name
-    else "Wheel: ${describe(triggerFor(OrbitActions.OPEN))} · Forward: ${describe(triggerFor(OrbitActions.FORWARD))}"
-
-// =================================================================== home list
-
-/** Home: one row per configuration, plus "Add a controller". */
-fun LazyListScope.controllersSection(tick: Int, onOpen: (String) -> Unit, onAdd: () -> Unit, onChanged: () -> Unit) {
-    item { Section("Controllers", "What drives Orbit, one setup per device: earbuds, remotes, keyboards, your phone's keys.") }
-    item {
-        val ctx = LocalContext.current
-        val list = remember(tick) { ControllerStore.load(ctx) }
-        Group {
-            list.forEachIndexed { i, c ->
-                if (i > 0) Div()
-                ListItem(colors = clear,
-                    modifier = Modifier.clickable { onOpen(c.id) },
-                    leadingContent = { RowIcon(iconFor(c)) },
-                    headlineContent = { Text(c.name, fontWeight = FontWeight.Medium) },
-                    supportingContent = { Text(c.summary(), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
-                        overflow = TextOverflow.Ellipsis) },
-                    trailingContent = {
-                        if (!c.isHeadphones) Switch(c.enabled, { ControllerStore.put(ctx, c.copy(enabled = it)); onChanged() })
-                        else Icon(painterResource(R.drawable.ic_chevron_down), null, Modifier.size(18.dp).rotate(-90f),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    })
-            }
-            Div()
-            ListItem(colors = clear,
-                modifier = Modifier.clickable(onClick = onAdd),
-                leadingContent = { RowIcon(R.drawable.ic_plus, MaterialTheme.colorScheme.primary) },
-                headlineContent = { Text("Add a controller", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) })
-        }
-    }
-}
-
-// =================================================================== capture
-
-/** Every button press while a controller screen is open: captured, nothing acts. */
-@Composable
-private fun CaptureButtons(onPress: (Orbit.Captured) -> Unit) {
-    val cb by rememberUpdatedState(onPress)
-    // only while this screen is in front: leave the app and every button works again at once
-    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
-    DisposableEffect(lifecycle) {
-        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) Orbit.captureUntil = 0L
-        }
-        lifecycle.addObserver(obs)
-        onDispose { lifecycle.removeObserver(obs); Orbit.captureUntil = 0L }
-    }
-    LaunchedEffect(lifecycle) {
-        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
-            try { while (true) { Orbit.captureUntil = Clock.now() + 1500; delay(500) } }
-            finally { Orbit.captureUntil = 0L }
-        }
-    }
-    LaunchedEffect(Unit) { Orbit.captured.collect { cb(it) } }
-}
-
-// =================================================================== add
-
-/** Add a controller: press a button on it, or pick a ready-made setup. */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun AddControllerScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onOpen: (id: String, adding: Boolean) -> Unit, onClose: () -> Unit) {
-    val ctx = LocalContext.current
-    var opened by remember { mutableStateOf(false) }
-    CaptureButtons { c ->
-        if (opened || !c.down) return@CaptureButtons
-        val existing = ControllerStore.load(ctx).firstOrNull { it.device == c.device }
-        when {
-            existing != null -> { opened = true; onOpen(existing.id, false) }
-            c.device == Config.BACKTAP -> {}
-            else -> {
-                val cfg = Config.keys(java.util.UUID.randomUUID().toString(), c.deviceName, c.device, listOf(Input(c.input, c.label)))
-                ControllerStore.put(ctx, cfg)
-                Orbit.log("controller added: ${c.deviceName}")
-                opened = true; onOpen(cfg.id, true)
-            }
-        }
-    }
-    Scaffold(topBar = {
-        TopAppBar(title = { Text("Add a controller", fontWeight = FontWeight.SemiBold) },
-            navigationIcon = { IconButton(onClose) { Icon(painterResource(R.drawable.ic_x), "Cancel") } })
-    }) { pad ->
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
-            top = pad.calculateTopPadding() + 8.dp, bottom = pad.calculateBottomPadding() + 24.dp)) {
-            if (!a11yOn) item { Banner("Orbit's accessibility service is off, so it can't hear buttons yet.", "Turn on", onSetUpA11y) }
-            item { Listener("Press a button on it", "Any remote, selfie stick, keyboard, knob or game pad. Orbit finds the device; then you pick what each button does.") }
-            item { Section("Or start from a ready-made setup", "Defaults you can change afterwards.") }
-            item {
-                Group {
-                    PresetRow(R.drawable.ic_volume, "Earbuds & headphones", "CMF Buds Pro 2, AirPods, speakers, wired earphones") {
-                        onOpen(Config.HEADPHONES, false)
-                    }
-                    Div()
-                    PresetRow(R.drawable.ic_settings, "Phone volume keys", "Volume + and − drive Orbit while the screen is on") {
-                        val cfg = ControllerStore.load(ctx).firstOrNull { it.device == Config.BUILTIN }
-                            ?: Config.phoneVolumeKeys(java.util.UUID.randomUUID().toString()).also { ControllerStore.put(ctx, it) }
-                        onOpen(cfg.id, false)
-                    }
-                    Div()
-                    PresetRow(R.drawable.ic_bolt, "Back of the phone", "Tap the back of the phone (Pixel Quick Tap, Samsung RegiStar)") {
-                        val cfg = ControllerStore.load(ctx).firstOrNull { it.device == Config.BACKTAP }
-                            ?: Config.backTap(java.util.UUID.randomUUID().toString()).also { ControllerStore.put(ctx, it) }
-                        BackTapActivity.setAvailable(ctx, true)
-                        onOpen(cfg.id, false)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun PresetRow(icon: Int, title: String, sub: String, onClick: () -> Unit) {
-    ListItem(colors = clear, modifier = Modifier.clickable(onClick = onClick),
-        leadingContent = { RowIcon(icon) },
-        headlineContent = { Text(title, fontWeight = FontWeight.Medium) },
-        supportingContent = { Text(sub, color = MaterialTheme.colorScheme.onSurfaceVariant) })
-}
-
-@Composable
-private fun Listener(title: String, sub: String) {
-    val pulse = rememberInfiniteTransition(label = "pulse")
-    val p by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Restart), label = "p")
-    val accent = MaterialTheme.colorScheme.primary
-    Column(Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(116.dp), contentAlignment = Alignment.Center) {
-            Canvas(Modifier.fillMaxSize()) {
-                val r = size.minDimension / 2
-                drawCircle(accent.copy(alpha = (1 - p) * 0.35f), r * (0.55f + 0.45f * p), style = Stroke(3.dp.toPx()))
-                drawCircle(accent.copy(alpha = 0.14f), r * 0.5f)
-                drawCircle(accent, r * 0.5f, style = Stroke(2.dp.toPx()))
-            }
-            Icon(painterResource(R.drawable.ic_keyboard), null, Modifier.size(30.dp), tint = accent)
-        }
-        Spacer(Modifier.height(12.dp))
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(6.dp))
-        Text(sub, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 460.dp))
-    }
-}
-
-// =================================================================== edit
-
-/**
- * One configuration: 1, its buttons (or, for earbuds, which preset); 2, what each of
- * Orbit's actions is set to. Every press while this screen is open is a test: the
- * action it would do lights up, and nothing else happens.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ConfigScreen(id: String, startAdding: Boolean, onClose: () -> Unit) {
-    val ctx = LocalContext.current
-    var cfg by remember { mutableStateOf(ControllerStore.get(ctx, id) ?: Config.headphones()) }
-    var adding by remember { mutableStateOf(startAdding && !cfg.isHeadphones && cfg.device != Config.BACKTAP) }
-    var customized by remember { mutableStateOf(!startAdding) }
-    var lit by remember { mutableStateOf<String?>(null) }
-    var litAt by remember { mutableLongStateOf(0L) }
-    var now by remember { mutableLongStateOf(Clock.now()) }
-    var note by remember { mutableStateOf<String?>(null) }
-    var typing by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<String?>(null) }      // the action whose button is being picked
-    var pickingAction by remember { mutableStateOf(false) }
-    var pickingApp by remember { mutableStateOf(false) }
-    var confirmDelete by remember { mutableStateOf(false) }
-    var heard by remember { mutableStateOf<Pair<String, Long>?>(null) }   // last button pressed
-
-    fun save(c: Config) { cfg = c; ControllerStore.put(ctx, c) }
-
-    // a private hub on this setup: what would this press do?
-    val preview = remember(cfg) {
-        ConfigHub { ev ->
-            lit = ev.action ?: when {
-                ev.kind == Kind.ROTATE && ev.delta > 0 -> OrbitActions.FORWARD
-                ev.kind == Kind.ROTATE -> OrbitActions.BACK
-                else -> OrbitActions.SELECT
-            }
-            litAt = Clock.now()
-        }.also { it.set(listOf(cfg.copy(enabled = true))) }
-    }
-    LaunchedEffect(preview) { while (true) { preview.tick(Clock.now()); now = Clock.now(); delay(20) } }
-
-    CaptureButtons { c ->
-        if (c.device != cfg.device) {
-            if (c.down) note = "That was “${c.deviceName}”, not ${cfg.name}. Each device has its own setup."
-            return@CaptureButtons
-        }
-        if (c.down) heard = c.input to Clock.now()
-        val known = cfg.input(c.input) != null
-        when {
-            known && c.counted -> preview.pulse(cfg.device!!, c.input)
-            known -> preview.onKey(cfg.device, c.input, c.down, Clock.now())
-            adding && c.down && !c.counted -> {
-                val ins = cfg.inputs + Input(c.input, c.label)
-                save(if (customized) cfg.withInputs(ins) else cfg.copy(inputs = ins, bindings = Config.defaults(ins)))
-                if (c.typing) typing = true
-                note = null
-            }
-            c.down && cfg.isHeadphones -> note = "Your earbuds sent “${c.label}”, which this preset doesn't use. Try another one above."
-            c.down -> note = "Tap “Add a button” first to add “${c.label}”."
-        }
-    }
-
-    Scaffold(topBar = {
-        TopAppBar(title = { Text(cfg.name, fontWeight = FontWeight.SemiBold) },
-            navigationIcon = { IconButton(onClose) { Icon(painterResource(R.drawable.ic_arrow_left), "Back") } },
-            actions = { if (!cfg.isHeadphones) TextButton({ confirmDelete = true }) { Text("Remove", color = MaterialTheme.colorScheme.error) } })
-    }) { pad ->
-        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
-            top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 32.dp)) {
-
-            // ---------------------------------------------------- 1: buttons
-            if (cfg.isHeadphones) {
-                item { Section("1  Your earbuds", "Pick what you have. Its buttons and gestures become Orbit's.") }
-                item {
-                    Group {
-                        Presets.ALL.forEachIndexed { i, p ->
-                            if (i > 0) Div()
-                            ListItem(colors = clear,
-                                modifier = Modifier.clickable { save(Config.headphones(p)); customized = false },
-                                leadingContent = { RadioButton(cfg.preset == p.id, { save(Config.headphones(p)) }) },
-                                headlineContent = { Text(p.name, fontWeight = FontWeight.Medium) },
-                                supportingContent = { Text(p.about, color = MaterialTheme.colorScheme.onSurfaceVariant) })
-                        }
-                    }
-                    if (cfg.preset == Presets.CMF.id) Hint("In Nothing X → Controls → Dial: press = Play/Pause, double = Next track, " +
-                        "triple = Previous track, hold = Voice assistant. That's how the dial talks to Orbit.")
-                }
-            } else if (cfg.device == Config.BACKTAP) {
-                item { Section("1  Set up the back tap", "Your phone senses the tap and opens “Orbit back tap”; Orbit does the rest.") }
-                item {
-                    Group {
-                        ListItem(colors = clear,
-                            headlineContent = { Text("Pixel", fontWeight = FontWeight.Medium) },
-                            supportingContent = { Text("Settings → System → Gestures → Quick Tap → Open app → Orbit back tap.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant) })
-                        Div()
-                        ListItem(colors = clear,
-                            headlineContent = { Text("Samsung", fontWeight = FontWeight.Medium) },
-                            supportingContent = { Text("Good Lock → RegiStar → Back-Tap action. Double tap: Open app → Orbit back tap. " +
-                                "Triple tap: Orbit back tap 2.", color = MaterialTheme.colorScheme.onSurfaceVariant) })
-                        Div()
-                        ListItem(colors = clear, modifier = Modifier.clickable { ctx.startActivity(Intent(Settings.ACTION_SETTINGS)) },
-                            leadingContent = { RowIcon(R.drawable.ic_settings, MaterialTheme.colorScheme.primary) },
-                            headlineContent = { Text("Open phone settings", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) })
-                    }
-                    Hint("Phones without back tap can't use this setup.")
-                }
-            } else {
-                item { Section("1  Buttons", "The buttons of ${cfg.name} that Orbit uses. Its other buttons keep working as usual.") }
-                item {
-                    Group {
-                        cfg.inputs.forEachIndexed { i, inp ->
-                            if (i > 0) Div()
-                            val on = heard?.first == inp.id && now - (heard?.second ?: 0) < 350
-                            val bg by animateColorAsState(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent, label = "b")
-                            ListItem(colors = ListItemDefaults.colors(containerColor = bg),
-                                leadingContent = { Badge("ABCDEFGH"[i % 8].toString()) },
-                                headlineContent = { Text(inp.label, fontWeight = FontWeight.Medium) },
-                                trailingContent = {
-                                    if (cfg.inputs.size > 1) IconButton({ save(cfg.withInputs(cfg.inputs - inp)) }) {
-                                        Icon(painterResource(R.drawable.ic_x), "Remove ${inp.label}", Modifier.size(18.dp),
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                })
-                        }
-                        Div()
-                        if (adding) {
-                            val pulse = rememberInfiniteTransition(label = "a")
-                            val a by pulse.animateFloat(0.35f, 1f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "a")
-                            ListItem(colors = clear,
-                                leadingContent = { Box(Modifier.size(30.dp).background(MaterialTheme.colorScheme.primary.copy(alpha = a * 0.3f), CircleShape)) },
-                                headlineContent = { Text("Press another button on it…", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) },
-                                trailingContent = { TextButton({ adding = false }) { Text("Done") } })
-                        } else ListItem(colors = clear, modifier = Modifier.clickable { adding = true },
-                            leadingContent = { RowIcon(R.drawable.ic_plus, MaterialTheme.colorScheme.primary) },
-                            headlineContent = { Text("Add a button", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) })
-                    }
-                    if (typing) Hint("This is a typing keyboard: while Orbit is on, these keys drive Orbit instead of typing. " +
-                        "Spare keys work best (F-keys, arrows, Page up / down).", warn = true)
-                    if (cfg.device == Config.BUILTIN && cfg.inputs.any { it.id == "key:24" || it.id == "key:25" })
-                        Hint("While the screen is on, the volume keys drive Orbit instead of the volume. " +
-                            "To change the volume, pick the Volume tool, or switch this setup off.", warn = true)
-                }
-            }
-
-            // ---------------------------------------------------- 2: controls
-            item { Section("2  Controls", "What each button does. Tap a row to change it. Press your buttons to try: the action lights up.") }
-            item {
-                val extras = cfg.bindings.map { it.action }.filter { it !in OrbitActions.CORE }.distinct()
-                Group {
-                    (OrbitActions.CORE + extras).forEachIndexed { i, a ->
-                        if (i > 0) Div()
-                        val on = lit == a && now - litAt < 700
-                        val bg by animateColorAsState(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent, label = "l")
-                        val t = cfg.triggerFor(a)
-                        ListItem(colors = ListItemDefaults.colors(containerColor = bg),
-                            modifier = Modifier.clickable { editing = a },
-                            headlineContent = { Text(actionName(ctx, a), fontWeight = FontWeight.Medium) },
-                            supportingContent = { OrbitActions.hint(a).takeIf { it.isNotEmpty() }?.let {
-                                Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } },
-                            trailingContent = {
-                                Surface(color = if (t == null) MaterialTheme.colorScheme.surfaceContainerHighest else MaterialTheme.colorScheme.secondaryContainer,
-                                    shape = RoundedCornerShape(50)) {
-                                    Text(cfg.describe(t), Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                                        color = if (t == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSecondaryContainer,
-                                        style = MaterialTheme.typography.labelLarge)
-                                }
-                            })
-                    }
-                    Div()
-                    ListItem(colors = clear, modifier = Modifier.clickable { pickingAction = true },
-                        leadingContent = { RowIcon(R.drawable.ic_plus, MaterialTheme.colorScheme.primary) },
-                        headlineContent = { Text("Add an action", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) },
-                        supportingContent = { Text("Previous tool, play / pause, home, screenshot, open an app…",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant) })
-                }
-                if (cfg.triggerFor(OrbitActions.OPEN) == null)
-                    Hint("Nothing opens the wheel yet. Set “Open the wheel” to switch tools.", warn = true)
-                note?.let { Hint(it, warn = true) }
-            }
-        }
-    }
-
-    editing?.let { a ->
-        TriggerDialog(cfg, a, heard, onDismiss = { editing = null }) { t ->
-            val (c, lost) = cfg.bind(a, t)
-            save(c); customized = true; editing = null
-            note = lost?.let { "“${actionName(ctx, it)}” was on that button, so it's not set now." }
-        }
-    }
-    if (pickingAction) ActionPicker(onDismiss = { pickingAction = false }) { a ->
-        pickingAction = false
-        if (a == "launch:") pickingApp = true else editing = a
-    }
-    if (pickingApp) AppPicker(onDismiss = { pickingApp = false }) { pkg -> pickingApp = false; editing = "launch:$pkg" }
-    if (confirmDelete) AlertDialog(onDismissRequest = { confirmDelete = false },
-        title = { Text("Remove ${cfg.name}?") },
-        text = { Text("Its buttons go back to what they did before Orbit.") },
-        confirmButton = { TextButton({
-            ControllerStore.remove(ctx, cfg.id)
-            if (cfg.device == Config.BACKTAP) BackTapActivity.setAvailable(ctx, false)
-            confirmDelete = false; onClose()
-        }) { Text("Remove", color = MaterialTheme.colorScheme.error) } },
-        dismissButton = { TextButton({ confirmDelete = false }) { Text("Cancel") } })
-}
 
 private fun actionName(ctx: android.content.Context, a: String): String {
     if (a.startsWith("launch:") && a.length > 7) {
@@ -466,78 +109,443 @@ private fun actionName(ctx: android.content.Context, a: String): String {
     return OrbitActions.label(a)
 }
 
-/** Pick the button (and how it's pressed) for one action. Pressing a button picks it too. */
-@OptIn(ExperimentalLayoutApi::class)
+/** Green check when set, an empty ring when not (the wireframe's circles). */
 @Composable
-private fun TriggerDialog(cfg: Config, action: String, heard: Pair<String, Long>?, onDismiss: () -> Unit, onPick: (Trigger?) -> Unit) {
+private fun SetMark(set: Boolean) {
+    val ring = MaterialTheme.colorScheme.outline
+    Box(Modifier.size(26.dp).background(if (set) SetGreen else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
+        if (set) Text("✓", color = Color(0xFF0B1A12), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        else Canvas(Modifier.fillMaxSize()) { drawCircle(ring, size.minDimension / 2 - 2.dp.toPx(), style = Stroke(2.dp.toPx())) }
+    }
+}
+
+@Composable
+private fun TriggersText(ts: List<Trigger>) {
+    if (ts.isEmpty()) Text("Not set", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    else Text(ts.joinToString("  or  ") { it.label() }, color = SetGreen, maxLines = 2, overflow = TextOverflow.Ellipsis)
+}
+
+// =================================================================== home section
+
+/** Home: the functions and what drives them; tap to set up. */
+fun LazyListScope.controlsSection(tick: Int, onOpen: () -> Unit) {
+    item { Section("Controls", "What opens the menu, moves and selects: any mix of earbuds, keys, remotes and back taps.") }
+    item {
+        val ctx = LocalContext.current
+        val c = remember(tick) { ControllerStore.load(ctx) }
+        Group {
+            c.actions.forEachIndexed { i, a ->
+                if (i > 0) Div()
+                ListItem(colors = clear, modifier = Modifier.clickable(onClick = onOpen),
+                    leadingContent = { SetMark(c.triggers(a).isNotEmpty()) },
+                    headlineContent = { Text(actionName(ctx, a), fontWeight = FontWeight.Medium) },
+                    supportingContent = { TriggersText(c.triggers(a)) })
+            }
+            Div()
+            ListItem(colors = clear, modifier = Modifier.clickable(onClick = onOpen),
+                leadingContent = { RowIcon(R.drawable.ic_edit, MaterialTheme.colorScheme.primary) },
+                headlineContent = { Text("Set up controls", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) },
+                supportingContent = { Text(Presets.byId(c.preset)?.let { "Preset: ${it.name}" } ?: "Custom",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant) })
+        }
+    }
+}
+
+// =================================================================== capture
+
+/** Every press while a controls screen is in front: captured, nothing acts. */
+@Composable
+private fun CaptureButtons(onPress: (Orbit.Captured) -> Unit) {
+    val cb by rememberUpdatedState(onPress)
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+    DisposableEffect(lifecycle) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_PAUSE) Orbit.captureUntil = 0L
+        }
+        lifecycle.addObserver(obs)
+        onDispose { lifecycle.removeObserver(obs); Orbit.captureUntil = 0L }
+    }
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            try { while (true) { Orbit.captureUntil = Clock.now() + 1500; delay(500) } } finally { Orbit.captureUntil = 0L }
+        }
+    }
+    LaunchedEffect(Unit) { Orbit.captured.collect { cb(it) } }
+}
+
+/** Captured press -> the trigger it would be (keys of a typing keyboard: only that keyboard). */
+private fun Orbit.Captured.trigger(p: Press) =
+    Trigger(input, if (counted) Press.TAP else p, if (typing) device else null, if (typing) deviceName else null)
+
+// =================================================================== setup controls
+
+/** Wireframes 1 and 3: the functions with their triggers, Load presets, Save. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit) {
     val ctx = LocalContext.current
-    val current = cfg.triggerFor(action)
-    var input by remember { mutableStateOf(current?.input) }
-    var press by remember { mutableStateOf(current?.press ?: Press.TAP) }
-    val opened = remember { Clock.now() }
-    LaunchedEffect(heard) { if (heard != null && heard.second > opened && cfg.input(heard.first) != null) input = heard.first }
-    val sel = input?.let { cfg.input(it) }
-    AlertDialog(onDismissRequest = onDismiss,
-        title = { Text(actionName(ctx, action)) },
-        text = {
-            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
-                Text("Which button? Or just press it.", style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Spacer(Modifier.height(8.dp))
-                cfg.inputs.forEach { i ->
-                    Row(Modifier.fillMaxWidth().clickable { input = i.id }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(input == i.id, { input = i.id })
-                        Text(i.label)
-                    }
-                }
-                Row(Modifier.fillMaxWidth().clickable { input = null }.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(input == null, { input = null })
-                    Text("Not set", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (sel != null && !sel.counted) {
-                    Spacer(Modifier.height(12.dp))
-                    Text("How", style = MaterialTheme.typography.labelLarge)
-                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Press.entries.forEach { p -> FilterChip(press == p, { press = p }, label = { Text(p.label) }) }
-                    }
-                    val other = cfg.actionFor(sel.id, press)?.takeIf { it != action }
-                    if (other != null) Text("That's “${actionName(ctx, other)}” now. Choosing it moves it here.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
-                    if (press == Press.DOUBLE || press == Press.TRIPLE)
-                        Text("A single tap on this button then waits a moment to see if another tap follows.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else if (sel != null) {
-                    val other = cfg.actionFor(sel.id, Press.TAP)?.takeIf { it != action }
-                    if (other != null) Text("That's “${actionName(ctx, other)}” now. Choosing it moves it here.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
+    val saved = remember { ControllerStore.load(ctx) }
+    var draft by remember { mutableStateOf(saved) }
+    var editing by remember { mutableStateOf<String?>(null) }
+    var note by remember { mutableStateOf<String?>(null) }
+    var presets by remember { mutableStateOf(false) }
+    var addFn by remember { mutableStateOf(false) }
+    var pickApp by remember { mutableStateOf(false) }
+    var discard by remember { mutableStateOf(false) }
+    var lit by remember { mutableStateOf<String?>(null) }
+    var litAt by remember { mutableLongStateOf(0L) }
+    var now by remember { mutableLongStateOf(Clock.now()) }
+    val changed = draft != saved
+
+    fun close() { if (changed) discard = true else onClose() }
+
+    val fn = editing
+    if (fn != null) {
+        FunctionScreen(fn, draft) { c, lost ->
+            draft = c; editing = null
+            note = lost?.let { "That trigger was on “${actionName(ctx, it)}”; it's moved to “${actionName(ctx, fn)}”." }
+        }
+        return
+    }
+
+    // live test on the draft: press anything, its function lights up
+    val preview = remember(draft) {
+        ControlsHub { ev ->
+            lit = ev.action ?: when {
+                ev.kind == Kind.ROTATE && ev.delta > 0 -> OrbitActions.FORWARD
+                ev.kind == Kind.ROTATE -> OrbitActions.BACK
+                else -> OrbitActions.SELECT
+            }
+            litAt = Clock.now()
+        }.also { it.set(draft) }
+    }
+    LaunchedEffect(preview) { while (true) { preview.tick(Clock.now()); now = Clock.now(); delay(20) } }
+    CaptureButtons { c -> if (c.counted) preview.pulse(c.input) else preview.onKey(c.device, c.input, c.down, Clock.now()) }
+    BackHandler { close() }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("Setup controls", fontWeight = FontWeight.SemiBold) },
+                navigationIcon = { IconButton(::close) { Icon(painterResource(R.drawable.ic_arrow_left), "Back") } })
+        },
+        bottomBar = {
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Button(onClick = { ControllerStore.save(ctx, draft); Orbit.log("controls saved"); onClose() },
+                    enabled = changed, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp).height(52.dp)) {
+                    Text(if (changed) "Save" else "Saved", fontSize = 16.sp)
                 }
             }
         },
-        confirmButton = { Button({ onPick(sel?.let { Trigger(it.id, if (it.counted) Press.TAP else press) }) }) { Text("Done") } },
+    ) { pad ->
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
+            top = pad.calculateTopPadding(), bottom = pad.calculateBottomPadding() + 16.dp)) {
+            if (!a11yOn) item { Banner("Orbit's accessibility service is off, so it can't hear keys yet.", "Turn on", onSetUpA11y) }
+            item {
+                Row(Modifier.fillMaxWidth().padding(start = 4.dp, top = 20.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Functions", style = MaterialTheme.typography.titleLarge)
+                        Text("Press any of your buttons to test: its function lights up.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Box {
+                        OutlinedButton({ presets = true }) {
+                            Text("Load presets"); Spacer(Modifier.size(6.dp))
+                            Icon(painterResource(R.drawable.ic_chevron_down), null, Modifier.size(16.dp))
+                        }
+                        DropdownMenu(presets, { presets = false }) {
+                            Presets.ALL.forEach { p ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Column(Modifier.padding(vertical = 4.dp)) {
+                                            Text(p.name, fontWeight = FontWeight.Medium)
+                                            Text(p.about, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
+                                    },
+                                    onClick = { draft = p.controls; presets = false; note = "Loaded “${p.name}”. Change anything, then Save." })
+                            }
+                        }
+                    }
+                }
+            }
+            item {
+                Group {
+                    draft.actions.forEachIndexed { i, a ->
+                        if (i > 0) Div()
+                        val on = lit == a && now - litAt < 700
+                        val bg by animateColorAsState(if (on) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent, label = "l")
+                        ListItem(colors = ListItemDefaults.colors(containerColor = bg),
+                            modifier = Modifier.clickable { editing = a },
+                            leadingContent = { SetMark(draft.triggers(a).isNotEmpty()) },
+                            headlineContent = { Text(actionName(ctx, a), fontWeight = FontWeight.Medium) },
+                            supportingContent = { TriggersText(draft.triggers(a)) },
+                            trailingContent = { Icon(painterResource(R.drawable.ic_arrow_left), null, Modifier.size(20.dp).rotate(180f),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant) })
+                    }
+                    Div()
+                    ListItem(colors = clear, modifier = Modifier.clickable { addFn = true },
+                        leadingContent = { RowIcon(R.drawable.ic_plus, MaterialTheme.colorScheme.primary) },
+                        headlineContent = { Text("Add a function", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) },
+                        supportingContent = { Text("Previous tool, play / pause, home, screenshot, open an app…",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant) })
+                }
+                if (draft.triggers(OrbitActions.OPEN).isEmpty()) Hint("Nothing opens the menu yet, so you can't switch tools.", warn = true)
+                note?.let { Hint(it) }
+                if (draft.uses("key:24") || draft.uses("key:25"))
+                    Hint("While the screen is on, these volume keys drive Orbit instead of the volume. " +
+                        "To change the volume, pick the Volume tool, or turn Orbit off.", warn = true)
+            }
+        }
+    }
+
+    if (addFn) AlertDialog(onDismissRequest = { addFn = false },
+        title = { Text("Add a function") },
+        text = {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                OrbitActions.EXTRA.filter { it !in draft.actions }.forEach { a ->
+                    Text(if (a == "launch:") "Open an app…" else OrbitActions.label(a),
+                        Modifier.fillMaxWidth().clickable { addFn = false; if (a == "launch:") pickApp = true else editing = a }
+                            .padding(vertical = 12.dp), style = MaterialTheme.typography.bodyLarge)
+                }
+            }
+        }, confirmButton = {}, dismissButton = { TextButton({ addFn = false }) { Text("Cancel") } })
+    if (pickApp) AppPicker(onDismiss = { pickApp = false }) { pkg -> pickApp = false; editing = "launch:$pkg" }
+    if (discard) AlertDialog(onDismissRequest = { discard = false },
+        title = { Text("Discard changes?") }, text = { Text("Your changes to the controls aren't saved.") },
+        confirmButton = { TextButton({ discard = false; onClose() }) { Text("Discard", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton({ discard = false }) { Text("Keep editing") } })
+}
+
+// =================================================================== one function
+
+private enum class Category(val title: String, val about: String, val icon: Int) {
+    BACK("Tapping on back", "Pixel Quick Tap, Samsung RegiStar", R.drawable.ic_bolt),
+    VOLUME("Volume keys", "The phone's, a selfie stick's or a remote's", R.drawable.ic_volume),
+    MEDIA("Media buttons", "Earbuds, AirPods, the CMF dial, speakers, wired earphones", R.drawable.ic_play),
+    MOUSE("Mouse keys", "The side buttons of a mouse", R.drawable.ic_app),
+    KEYBOARD("Keyboard shortcut", "Any key or combination on a keyboard, knob or game pad", R.drawable.ic_keyboard),
+}
+
+private val CATALOG: Map<Category, List<String>> = mapOf(
+    Category.BACK to listOf("backtap:1", "backtap:2"),
+    Category.VOLUME to listOf("key:24", "key:25", "key:164"),
+    Category.MEDIA to listOf("media:play", "media:next", "media:prev", "media:hold", "vol:up", "vol:down", "media:hook"),
+    Category.MOUSE to listOf("mouse:back", "mouse:forward"),
+    Category.KEYBOARD to listOf("key:62", "key:66", "key:19", "key:20", "key:21", "key:22", "key:92", "key:93") + (131..142).map { "key:$it" },
+)
+
+/** Wireframe 2: one function. Choose (search or browse) or Record. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun FunctionScreen(action: String, controls: Controls, onDone: (Controls, String?) -> Unit) {
+    val ctx = LocalContext.current
+    var c by remember { mutableStateOf(controls) }
+    var tab by remember { mutableIntStateOf(0) }
+    var query by remember { mutableStateOf("") }
+    var cat by remember { mutableStateOf<Category?>(null) }
+    var asking by remember { mutableStateOf<String?>(null) }      // the key whose press is being picked
+
+    fun add(t: Trigger) { val (n, lost) = c.add(action, t); onDone(n, lost) }
+    fun back() { if (cat != null) cat = null else onDone(c, null) }
+    BackHandler { back() }
+
+    Scaffold(topBar = {
+        TopAppBar(title = { Text(cat?.title ?: actionName(ctx, action), fontWeight = FontWeight.SemiBold) },
+            navigationIcon = { IconButton(::back) { Icon(painterResource(R.drawable.ic_arrow_left), "Back") } })
+    }) { pad ->
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp,
+            top = pad.calculateTopPadding() + 4.dp, bottom = pad.calculateBottomPadding() + 24.dp)) {
+            val mine = c.triggers(action)
+            if (cat == null && mine.isNotEmpty()) item {
+                Text("Set to", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 6.dp))
+                Group {
+                    mine.forEachIndexed { i, t ->
+                        if (i > 0) Div()
+                        ListItem(colors = clear, leadingContent = { SetMark(true) },
+                            headlineContent = { Text(t.label(), fontWeight = FontWeight.Medium) },
+                            trailingContent = { IconButton({ c = c.remove(action, t) }) {
+                                Icon(painterResource(R.drawable.ic_x), "Remove", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) } })
+                    }
+                }
+                Hint(if (mine.size == 1) "Add another trigger below to use either one." else "Any of these works.")
+                Spacer(Modifier.height(14.dp))
+            }
+            if (cat == null) item {
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    listOf("Choose", "Record").forEachIndexed { i, l ->
+                        SegmentedButton(tab == i, { tab = i }, SegmentedButtonDefaults.itemShape(i, 2)) { Text(l) }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+
+            val cc = cat
+            when {
+                tab == 1 && cc == null -> item { Recorder(onUse = ::add) }
+                cc != null -> {
+                    if (cc == Category.BACK) item { BackTapHelp() }
+                    if (cc == Category.KEYBOARD) item {
+                        Hint("Common keys below. For any other key or a combination like Ctrl+Space, use Record.")
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    item { InputList(CATALOG.getValue(cc), c, action) { asking = it } }
+                }
+                else -> {
+                    item {
+                        OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true,
+                            placeholder = { Text("Search a trigger") },
+                            leadingIcon = { Icon(painterResource(R.drawable.ic_search), null, Modifier.size(20.dp)) },
+                            shape = RoundedCornerShape(16.dp))
+                        Spacer(Modifier.height(12.dp))
+                    }
+                    if (query.isBlank()) item {
+                        Group {
+                            Category.entries.forEachIndexed { i, k ->
+                                if (i > 0) Div()
+                                ListItem(colors = clear, modifier = Modifier.clickable { cat = k },
+                                    leadingContent = { RowIcon(k.icon) },
+                                    headlineContent = { Text(k.title, fontWeight = FontWeight.Medium) },
+                                    supportingContent = { Text(k.about, color = MaterialTheme.colorScheme.onSurfaceVariant) },
+                                    trailingContent = { Icon(painterResource(R.drawable.ic_arrow_left), null, Modifier.size(18.dp).rotate(180f),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant) })
+                            }
+                        }
+                    } else item {
+                        val q = query.trim().lowercase()
+                        val hits = CATALOG.entries.flatMap { (k, ins) -> ins.filter { Inputs.label(it).lowercase().contains(q) ||
+                            k.title.lowercase().contains(q) || k.about.lowercase().contains(q) } }.distinct()
+                        if (hits.isEmpty()) Hint("Nothing found. Try Record: press the button and Orbit finds it.")
+                        else InputList(hits, c, action) { asking = it }
+                    }
+                }
+            }
+        }
+    }
+
+    asking?.let { input ->
+        if (Inputs.counted(input)) { asking = null; add(Trigger(input)) }
+        else PressDialog(input, c, action, onDismiss = { asking = null }) { p -> asking = null; add(Trigger(input, p)) }
+    }
+}
+
+@Composable
+private fun InputList(inputs: List<String>, c: Controls, action: String, onPick: (String) -> Unit) {
+    val ctx = LocalContext.current
+    Group {
+        inputs.forEachIndexed { i, input ->
+            if (i > 0) Div()
+            val users = c.bindings.filter { it.trigger.input == input && it.trigger.device == null && it.action != action }.map {
+                if (Inputs.counted(input)) actionName(ctx, it.action) else "${it.trigger.press.label.lowercase()}: ${actionName(ctx, it.action)}"
+            }
+            ListItem(colors = clear, modifier = Modifier.clickable { onPick(input) },
+                headlineContent = { Text(Inputs.label(input), fontWeight = FontWeight.Medium) },
+                supportingContent = { if (users.isNotEmpty()) Text("Now: " + users.joinToString(", "), color = MaterialTheme.colorScheme.onSurfaceVariant) })
+        }
+    }
+}
+
+/** Tap / double tap / triple tap / hold for a key. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PressDialog(input: String, c: Controls, action: String, onDismiss: () -> Unit, onPick: (Press) -> Unit) {
+    val ctx = LocalContext.current
+    var p by remember { mutableStateOf(Press.TAP) }
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text(Inputs.label(input)) },
+        text = {
+            Column {
+                Text("How do you press it?", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Spacer(Modifier.height(10.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Press.entries.forEach { x -> FilterChip(p == x, { p = x }, label = { Text(x.label) }) }
+                }
+                c.actionFor(Trigger(input, p))?.takeIf { it != action }?.let {
+                    Spacer(Modifier.height(8.dp))
+                    Text("That's “${actionName(ctx, it)}” now; it moves here.", style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary)
+                }
+                if (p == Press.DOUBLE || p == Press.TRIPLE) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("A single tap of this key then waits a moment to see if another follows.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        },
+        confirmButton = { Button({ onPick(p) }) { Text("Use it") } },
         dismissButton = { TextButton(onDismiss) { Text("Cancel") } })
 }
 
+/** Record: press it the way you'll use it (tap, double tap, triple tap or hold). */
 @Composable
-private fun ActionPicker(onDismiss: () -> Unit, onPick: (String) -> Unit) {
-    AlertDialog(onDismissRequest = onDismiss,
-        title = { Text("Add an action") },
-        text = {
-            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
-                OrbitActions.EXTRA.forEach { a ->
-                    Text(if (a == "launch:") "Open an app…" else OrbitActions.label(a),
-                        Modifier.fillMaxWidth().clickable { onPick(a) }.padding(vertical = 12.dp),
-                        style = MaterialTheme.typography.bodyLarge)
-                }
+private fun Recorder(onUse: (Trigger) -> Unit) {
+    var got by remember { mutableStateOf<Trigger?>(null) }
+    var input by remember { mutableStateOf<Orbit.Captured?>(null) }
+    val rec = remember { mutableStateOf<PressRecognizer?>(null) }
+    LaunchedEffect(Unit) { while (true) { rec.value?.tick(Clock.now()); delay(15) } }
+    CaptureButtons { c ->
+        if (got != null) return@CaptureButtons
+        val first = input
+        when {
+            c.counted -> if (c.down) got = c.trigger(Press.TAP)
+            first == null || first.input != c.input -> if (c.down) {
+                input = c
+                rec.value = PressRecognizer(Press.entries.toSet(), false) { p -> got = c.trigger(p) }.also { it.down(Clock.now()) }
             }
-        },
-        confirmButton = {}, dismissButton = { TextButton(onDismiss) { Text("Cancel") } })
+            c.down -> rec.value?.down(Clock.now())
+            else -> rec.value?.up(Clock.now())
+        }
+    }
+    val pulse = rememberInfiniteTransition(label = "pulse")
+    val k by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Restart), label = "p")
+    val accent = MaterialTheme.colorScheme.primary
+    val g = got
+    Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(120.dp), contentAlignment = Alignment.Center) {
+            Canvas(Modifier.fillMaxSize()) {
+                val r = size.minDimension / 2
+                if (g == null) drawCircle(accent.copy(alpha = (1 - k) * 0.35f), r * (0.55f + 0.45f * k), style = Stroke(3.dp.toPx()))
+                drawCircle((if (g != null) SetGreen else accent).copy(alpha = 0.16f), r * 0.5f)
+                drawCircle(if (g != null) SetGreen else accent, r * 0.5f, style = Stroke(2.dp.toPx()))
+            }
+            if (g != null) Text("✓", color = SetGreen, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            else Icon(painterResource(R.drawable.ic_keyboard), null, Modifier.size(32.dp), tint = accent)
+        }
+        Spacer(Modifier.height(12.dp))
+        Text(g?.label() ?: if (input != null) "Keep going…" else "Press it now",
+            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(6.dp))
+        Text(if (g != null) "Use this, or try again." else
+            "The way you'll use it: tap, double tap, triple tap or hold. Earbuds, volume keys, remotes, keyboards and game pads all work.",
+            style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center, modifier = Modifier.widthIn(max = 440.dp))
+        if (g != null) {
+            Spacer(Modifier.height(16.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                TextButton({ got = null; input = null; rec.value = null }) { Text("Try again") }
+                Button({ onUse(g) }) { Text("Use this") }
+            }
+        }
+    }
 }
 
 @Composable
-private fun Badge(text: String) {
-    Box(Modifier.size(30.dp).background(MaterialTheme.colorScheme.secondaryContainer, CircleShape), contentAlignment = Alignment.Center) {
-        Text(text, color = MaterialTheme.colorScheme.onSecondaryContainer, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+private fun BackTapHelp() {
+    val ctx = LocalContext.current
+    Group {
+        ListItem(colors = clear, headlineContent = { Text("Pixel", fontWeight = FontWeight.Medium) },
+            supportingContent = { Text("Settings → System → Gestures → Quick Tap → Open app → Orbit back tap.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant) })
+        Div()
+        ListItem(colors = clear, headlineContent = { Text("Samsung", fontWeight = FontWeight.Medium) },
+            supportingContent = { Text("Good Lock → RegiStar → Back-Tap action → Open app → Orbit back tap (double tap) " +
+                "and Orbit back tap 2 (triple tap).", color = MaterialTheme.colorScheme.onSurfaceVariant) })
+        Div()
+        ListItem(colors = clear, modifier = Modifier.clickable { ctx.startActivity(Intent(Settings.ACTION_SETTINGS)) },
+            leadingContent = { RowIcon(R.drawable.ic_settings, MaterialTheme.colorScheme.primary) },
+            headlineContent = { Text("Open phone settings", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) })
     }
+    Hint("The “Orbit back tap” entries show up in the phone's app list once you save a back tap here. Phones without back tap can't use it.")
+    Spacer(Modifier.height(12.dp))
 }
 
 @Composable

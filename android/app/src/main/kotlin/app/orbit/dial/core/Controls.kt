@@ -1,45 +1,97 @@
 package app.orbit.dial.core
 
 /**
- * Configurations: which button does what. One per device (a remote, a keyboard, the
- * phone's volume keys) plus one for earbuds / headphones (their music buttons and
- * volume), which comes from a preset (CMF Buds Pro 2, AirPods...).
+ * Controls: which trigger does which function. One setup for everything:
  *
- * A configuration has buttons ([Input]) and bindings: action <- (button, press).
- * Actions are Orbit's own: move forward / back, open the wheel, select, plus any of
- * the press-action strings (core/Settings.kt): last_tool, media:play_pause,
- * launch:<pkg>, global:home ...
+ *   Select        <- e.g. "Volume − · hold", "Earbuds: press"
+ *   Open menu     <- e.g. "Back tap"
+ *   Move left     <- e.g. "Volume − · tap"
+ *   Move right    <- e.g. "Volume + · tap", "CMF dial: turn forward"
  *
- * Snappy: a button that only has a Tap fires on key down (and repeats while held when
- * it moves). Double / triple taps wait [PressRecognizer.GAP_MS] for the next tap,
- * but never after the highest count that button uses; a hold fires the moment it passes.
+ * A trigger is an input (a key, an earbud gesture, a dial turn, a back tap), how it's
+ * pressed, and optionally the one device it must come from. Triggers from different
+ * sources mix freely, and a function can have several.
+ *
+ * Snappy: a key whose only use is a plain tap fires on key down (and repeats while
+ * held when it moves). Double / triple taps wait [PressRecognizer.GAP_MS] for the
+ * next tap but never after the highest count in use; holds fire the moment they pass.
  */
 enum class Press(val label: String) { TAP("Tap"), DOUBLE("Double tap"), TRIPLE("Triple tap"), HOLD("Hold") }
 
-/** A button. [counted]: the device itself counts presses (earbud gestures, the
- *  dial's turns): it only ever "taps". */
-data class Input(val id: String, val label: String, val counted: Boolean = false)
-
-data class Trigger(val input: String, val press: Press = Press.TAP)
+/**
+ * [input]: "key:<code>[+ctrl][+alt][+shift][+meta]", "mouse:back|forward",
+ * "media:play|next|prev|hold|hook", "vol:up|down", "backtap:1|2".
+ * [device]: null = from any device; else the InputDevice it was recorded on.
+ */
+data class Trigger(val input: String, val press: Press = Press.TAP, val device: String? = null, val deviceName: String? = null) {
+    /** The device counts presses itself (earbud gestures, dial turns, back taps): always a "tap". */
+    val counted get() = Inputs.counted(input)
+    fun normalized() = if (counted) copy(press = Press.TAP) else this
+    fun label(): String {
+        val base = Inputs.label(input)
+        val how = if (counted) "" else " · ${press.label.lowercase()}"
+        val on = deviceName?.let { " on $it" } ?: ""
+        return base + how + on
+    }
+}
 
 data class Binding(val action: String, val trigger: Trigger)
 
+object Inputs {
+    fun counted(input: String) = input.startsWith("vol:") || input.startsWith("backtap:") ||
+        (input.startsWith("media:") && input != "media:hook")
+
+    private val keyNames = mapOf(
+        24 to "Volume +", 25 to "Volume −", 164 to "Mute", 27 to "Camera button", 80 to "Focus button",
+        66 to "Enter", 160 to "Enter", 62 to "Space", 61 to "Tab", 111 to "Esc", 67 to "Backspace", 112 to "Delete",
+        19 to "Up", 20 to "Down", 21 to "Left", 22 to "Right", 23 to "Centre", 92 to "Page up", 93 to "Page down",
+        122 to "Home key", 123 to "End", 85 to "Play / pause key", 87 to "Next track key", 88 to "Previous track key",
+        79 to "Headset button", 96 to "Game pad A", 97 to "Game pad B", 99 to "Game pad X", 100 to "Game pad Y",
+        102 to "Game pad L1", 103 to "Game pad R1", 108 to "Game pad Start", 109 to "Game pad Select",
+    ) + (131..142).associateWith { "F${it - 130}" } + (29..54).associateWith { ('A' + (it - 29)).toString() } +
+        (7..16).associateWith { ((it - 7)).toString() }
+
+    fun keyName(code: Int) = keyNames[code] ?: "Key $code"
+
+    fun label(input: String): String {
+        if (input.startsWith("key:")) {
+            val parts = input.removePrefix("key:").split("+")
+            val mods = parts.drop(1).map { it.replaceFirstChar { c -> c.uppercase() } }
+            return (mods + keyName(parts[0].toIntOrNull() ?: -1)).joinToString("+")
+        }
+        return when (input) {
+            "mouse:back" -> "Mouse back button"
+            "mouse:forward" -> "Mouse forward button"
+            "media:play" -> "Earbuds: press"
+            "media:next" -> "Earbuds: double press"
+            "media:prev" -> "Earbuds: triple press"
+            "media:hold" -> "Earbuds: press and hold"
+            "media:hook" -> "Cable button"
+            "vol:up" -> "Dial forward / headphone volume +"
+            "vol:down" -> "Dial back / headphone volume −"
+            "backtap:1" -> "Back tap"
+            "backtap:2" -> "Back tap 2"
+            else -> input
+        }
+    }
+}
+
 object OrbitActions {
-    const val FORWARD = "forward"
-    const val BACK = "back"
-    const val OPEN = "open_wheel"
     const val SELECT = "select"
-    /** Always listed, in this order. */
-    val CORE = listOf(OPEN, FORWARD, BACK, SELECT)
-    /** Extra actions a user can add. */
+    const val OPEN = "open_wheel"
+    const val BACK = "back"
+    const val FORWARD = "forward"
+    /** The functions every setup shows, in this order. */
+    val CORE = listOf(SELECT, OPEN, BACK, FORWARD)
+    /** Functions a user can add. */
     val EXTRA = listOf("last_tool", "media:play_pause", "media:next", "media:previous", "launch:",
         "global:back", "global:home", "global:recents", "global:notifications", "global:screenshot", "global:lock")
 
     fun label(a: String): String = when {
-        a == OPEN -> "Open the wheel"
-        a == FORWARD -> "Move forward"
-        a == BACK -> "Move back"
         a == SELECT -> "Select"
+        a == OPEN -> "Open menu"
+        a == BACK -> "Move left"
+        a == FORWARD -> "Move right"
         a == "last_tool" -> "Previous tool"
         a == "media:play_pause" -> "Play / pause"
         a == "media:next" -> "Next track"
@@ -56,119 +108,64 @@ object OrbitActions {
     }
 
     fun hint(a: String): String = when (a) {
-        OPEN -> "Shows the wheel of tools. Again closes it."
-        FORWARD -> "Next item in the wheel. In a tool: next reel, next slide, louder…"
-        BACK -> "Previous item. In a tool: the other way."
         SELECT -> "Picks the highlighted tool. In a tool: its press (shutter, play…)."
+        OPEN -> "Shows the wheel of tools. Again closes it."
+        BACK -> "Previous item. In a tool: back, quieter, previous slide…"
+        FORWARD -> "Next item. In a tool: next reel, louder, next slide…"
         else -> ""
     }
 }
 
-data class Config(
-    val id: String,
-    val name: String,
-    /** Where its buttons come from: an Android InputDevice descriptor, [BUILTIN] (the
-     *  phone's own keys), or [HEADPHONES] (music buttons and volume of any headphones). */
-    val device: String?,
-    val inputs: List<Input>,
-    val bindings: List<Binding>,
-    val enabled: Boolean = true,
-    /** Headphones: which preset its buttons come from. */
-    val preset: String? = null,
-) {
-    val isHeadphones get() = device == HEADPHONES
+data class Controls(val bindings: List<Binding>, val preset: String? = null) {
+    fun triggers(action: String) = bindings.filter { it.action == action }.map { it.trigger }
+    fun actionFor(t: Trigger) = bindings.firstOrNull { it.trigger == t }?.action
+    val actions get() = (OrbitActions.CORE + bindings.map { it.action }.filter { it !in OrbitActions.CORE }).distinct()
 
-    fun triggerFor(action: String): Trigger? = bindings.firstOrNull { it.action == action }?.trigger
-    fun actionFor(input: String, press: Press): String? =
-        bindings.firstOrNull { it.trigger.input == input && it.trigger.press == press }?.action
-    fun pressesOf(input: String): Set<Press> = bindings.filter { it.trigger.input == input }.map { it.trigger.press }.toSet()
-    fun input(id: String) = inputs.firstOrNull { it.id == id }
-
-    /** Bind [action] to [trigger] (null = not set). A trigger does one thing: whatever
-     *  had it before loses it. Returns the new config and the action that lost it. */
-    fun bind(action: String, trigger: Trigger?): Pair<Config, String?> {
-        val taken = trigger?.let { t -> bindings.firstOrNull { it.trigger == t && it.action != action }?.action }
-        val rest = bindings.filter { it.action != action && it.trigger != trigger }
-        return copy(bindings = if (trigger == null) rest else rest + Binding(action, trigger)) to taken
+    /** Add [t] to [action]; a trigger does one thing, so whoever had it loses it.
+     *  Returns the new controls and the action that lost it. */
+    fun add(action: String, t: Trigger): Pair<Controls, String?> {
+        val n = t.normalized()
+        val lost = bindings.firstOrNull { it.trigger == n && it.action != action }?.action
+        return copy(bindings = bindings.filter { it.trigger != n } + Binding(action, n), preset = null) to lost
     }
 
-    fun withInputs(list: List<Input>) = copy(inputs = list, bindings = bindings.filter { b -> list.any { it.id == b.trigger.input } })
+    fun remove(action: String, t: Trigger) = copy(bindings = bindings.filterNot { it.action == action && it.trigger == t }, preset = null)
+    fun clear(action: String) = copy(bindings = bindings.filterNot { it.action == action }, preset = null)
 
-    companion object {
-        const val HEADPHONES = "headphones"
-        const val BUILTIN = "builtin"
-
-        /** Sensible defaults for buttons in the order they were pressed. */
-        fun defaults(inputs: List<Input>): List<Binding> {
-            val ids = inputs.map { it.id }
-            fun b(a: String, i: Int, p: Press = Press.TAP) = Binding(a, Trigger(ids[i], p))
-            return when (ids.size) {
-                0 -> emptyList()
-                1 -> listOf(b(OrbitActions.FORWARD, 0), b(OrbitActions.SELECT, 0, Press.DOUBLE), b(OrbitActions.OPEN, 0, Press.HOLD))
-                2 -> listOf(b(OrbitActions.FORWARD, 0), b(OrbitActions.BACK, 1),
-                    b(OrbitActions.SELECT, 0, Press.HOLD), b(OrbitActions.OPEN, 1, Press.HOLD))
-                3 -> listOf(b(OrbitActions.FORWARD, 0), b(OrbitActions.BACK, 1), b(OrbitActions.SELECT, 2),
-                    b(OrbitActions.OPEN, 2, Press.HOLD))
-                else -> listOf(b(OrbitActions.FORWARD, 0), b(OrbitActions.BACK, 1), b(OrbitActions.SELECT, 2),
-                    b(OrbitActions.OPEN, 3), b("last_tool", 2, Press.HOLD))
-            }
-        }
-
-        fun keys(id: String, name: String, device: String, inputs: List<Input>) =
-            Config(id, name, device, inputs, defaults(inputs))
-
-        fun phoneVolumeKeys(id: String) = keys(id, "Phone volume keys", BUILTIN,
-            listOf(Input("key:24", "Volume +"), Input("key:25", "Volume −")))
-
-        const val BACKTAP = "backtap"
-
-        /** Pixel Quick Tap / Samsung RegiStar back tap, through Orbit's two app entries. */
-        fun backTap(id: String) = Config(id, "Back of the phone", BACKTAP,
-            listOf(Input("backtap:1", "Back tap", true), Input("backtap:2", "Back tap 2", true)),
-            listOf(Binding(OrbitActions.SELECT, Trigger("backtap:1")), Binding(OrbitActions.OPEN, Trigger("backtap:2"))))
-
-        fun headphones(preset: Preset = Presets.CMF) =
-            Config(HEADPHONES, "Earbuds & headphones", HEADPHONES, preset.inputs, preset.bindings, preset = preset.id)
-    }
+    fun uses(prefix: String) = bindings.any { it.trigger.input.startsWith(prefix) }
 }
 
-data class Preset(val id: String, val name: String, val about: String, val inputs: List<Input>, val bindings: List<Binding>)
+data class Preset(val id: String, val name: String, val about: String, val controls: Controls)
 
 object Presets {
-    private fun t(a: String, input: String, p: Press = Press.TAP) = Binding(a, Trigger(input, p))
-    const val PLAY = "media:play"
-    const val NEXT = "media:next"
-    const val PREV = "media:prev"
-    const val HOLD = "media:hold"
-    const val UP = "vol:up"
-    const val DOWN = "vol:down"
-    const val HOOK = "media:hook"
+    private fun b(a: String, input: String, p: Press = Press.TAP) = Binding(a, Trigger(input, p))
+    private fun p(id: String, name: String, about: String, vararg bs: Binding) = Preset(id, name, about, Controls(bs.toList(), id))
 
-    val CMF = Preset("cmf", "CMF Buds Pro 2", "The case dial: turn it, press, double, triple, hold.",
-        listOf(Input(UP, "Turn forward", true), Input(DOWN, "Turn back", true), Input(PLAY, "Press", true),
-            Input(NEXT, "Double press", true), Input(PREV, "Triple press", true), Input(HOLD, "Press and hold", true)),
-        listOf(t(OrbitActions.OPEN, NEXT), t(OrbitActions.FORWARD, UP), t(OrbitActions.BACK, DOWN), t(OrbitActions.SELECT, PLAY),
-            t("last_tool", PREV), t("launch:com.anthropic.claude", HOLD)))
+    val CMF = p("cmf", "CMF Buds Pro 2", "Turn the case dial to move; press, double, triple, hold.",
+        b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
+        b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"),
+        b("last_tool", "media:prev"), b("launch:com.anthropic.claude", "media:hold"))
+    val EARBUDS = p("earbuds", "AirPods & other earbuds", "Press or tap the earbud once, twice, three times.",
+        b(OrbitActions.SELECT, "media:play"), b(OrbitActions.FORWARD, "media:next"), b(OrbitActions.OPEN, "media:prev"))
+    val SPEAKER = p("speaker", "Speaker or headphones with buttons", "Play, next / previous and volume buttons.",
+        b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
+        b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"), b("last_tool", "media:prev"))
+    val WIRED = p("wired", "Wired earphones", "The one button on the cable.",
+        b(OrbitActions.FORWARD, "media:hook"), b(OrbitActions.SELECT, "media:hook", Press.DOUBLE), b(OrbitActions.OPEN, "media:hook", Press.HOLD))
+    val VOLUME_KEYS = p("volume_keys", "Volume keys", "The phone's volume keys, or a selfie stick's.",
+        b(OrbitActions.BACK, "key:25"), b(OrbitActions.FORWARD, "key:24"),
+        b(OrbitActions.SELECT, "key:25", Press.HOLD), b(OrbitActions.OPEN, "key:24", Press.HOLD))
+    val VOLUME_BACKTAP = p("volume_backtap", "Volume keys + back tap", "Volume keys move; tap the back to select or open.",
+        b(OrbitActions.BACK, "key:25"), b(OrbitActions.FORWARD, "key:24"),
+        b(OrbitActions.SELECT, "backtap:1"), b(OrbitActions.OPEN, "backtap:2"))
 
-    val EARBUDS = Preset("earbuds", "AirPods & other earbuds", "Their press or tap gestures: once, twice, three times.",
-        listOf(Input(PLAY, "Press", true), Input(NEXT, "Double press", true), Input(PREV, "Triple press", true)),
-        listOf(t(OrbitActions.OPEN, PREV), t(OrbitActions.FORWARD, NEXT), t(OrbitActions.SELECT, PLAY)))
-
-    val SPEAKER = Preset("speaker", "Speaker or headphones with buttons", "Play, next, previous and volume buttons.",
-        listOf(Input(UP, "Volume +", true), Input(DOWN, "Volume −", true), Input(PLAY, "Play / pause", true),
-            Input(NEXT, "Next track", true), Input(PREV, "Previous track", true)),
-        listOf(t(OrbitActions.OPEN, NEXT), t(OrbitActions.FORWARD, UP), t(OrbitActions.BACK, DOWN), t(OrbitActions.SELECT, PLAY),
-            t("last_tool", PREV)))
-
-    val WIRED = Preset("wired", "Wired earphones", "The one button on the cable.",
-        listOf(Input(HOOK, "Cable button")), Config.defaults(listOf(Input(HOOK, "Cable button"))))
-
-    val ALL = listOf(CMF, EARBUDS, SPEAKER, WIRED)
-    fun byId(id: String?) = ALL.firstOrNull { it.id == id } ?: CMF
+    val ALL = listOf(CMF, EARBUDS, SPEAKER, WIRED, VOLUME_KEYS, VOLUME_BACKTAP)
+    fun byId(id: String?) = ALL.firstOrNull { it.id == id }
+    val DEFAULT get() = CMF.controls
 }
 
-/** Turns one button's downs / ups into the presses its configuration uses. */
-class PressRecognizer(presses: Set<Press>, repeat: Boolean, private val emit: (Press) -> Unit) {
+/** Turns one input's downs / ups into the presses in use. */
+class PressRecognizer(presses: Set<Press>, private var repeat: Boolean, private val emit: (Press) -> Unit) {
     companion object {
         const val GAP_MS = 300L
         const val HOLD_MS = 500L
@@ -177,7 +174,6 @@ class PressRecognizer(presses: Set<Press>, repeat: Boolean, private val emit: (P
     }
 
     var presses = presses; private set
-    private var repeat = repeat
     private var downAt: Long? = null
     private var firedOnDown = false
     private var holdFired = false
@@ -231,58 +227,62 @@ class PressRecognizer(presses: Set<Press>, repeat: Boolean, private val emit: (P
     }
 }
 
-/** The DialEvent an action becomes (moves are turns, so every tool understands them). */
+/** The DialEvent a function becomes (moves are turns, so every tool understands them). */
 fun actionEvent(action: String, n: Int, source: String, t: Long): DialEvent = when (action) {
     OrbitActions.FORWARD -> DialEvent(Kind.ROTATE, n, source, t)
     OrbitActions.BACK -> DialEvent(Kind.ROTATE, -n, source, t)
     else -> DialEvent(Kind.CLICK, 0, source, t, action)
 }
 
-/** All enabled configurations: (device, button) in, DialEvents out. */
-class ConfigHub(private val emit: (DialEvent) -> Unit) {
-    private class Slot(val cfg: Config, val input: Input) { lateinit var r: PressRecognizer }
+/** The live controls: inputs in, DialEvents out. */
+class ControlsHub(private val emit: (DialEvent) -> Unit) {
+    /** One trigger input (from one device, or any). Each physical device pressing it gets
+     *  its own recognizer, so two remotes never mix their taps. */
+    private class Slot(val device: String?, val input: String, val presses: Set<Press>, val repeat: Boolean,
+                       val onPress: (Press) -> Unit) {
+        val byDevice = HashMap<String?, PressRecognizer>()
+        fun r(dev: String?) = byDevice.getOrPut(dev) { PressRecognizer(presses, repeat, onPress) }
+    }
     private var slots: List<Slot> = emptyList()
-    var configs: List<Config> = emptyList(); private set
+    var controls = Controls(emptyList()); private set
 
-    fun set(list: List<Config>) {
-        slots.forEach { it.r.reset() }
-        configs = list.filter { it.enabled }
-        slots = configs.flatMap { c ->
-            c.inputs.map { i ->
-                val presses = c.pressesOf(i.id)
-                val moves = presses == setOf(Press.TAP) &&
-                    c.actionFor(i.id, Press.TAP) in setOf(OrbitActions.FORWARD, OrbitActions.BACK)
-                Slot(c, i).also { s -> s.r = PressRecognizer(presses, moves) { p -> c.actionFor(i.id, p)?.let { emitAction(c, it, 1, null) } } }
-            }
+    fun set(c: Controls) {
+        slots.forEach { s -> s.byDevice.values.forEach { it.reset() } }
+        controls = c
+        slots = c.bindings.filterNot { it.trigger.counted }.map { it.trigger.device to it.trigger.input }.distinct().map { (dev, input) ->
+            val mine = c.bindings.filter { it.trigger.device == dev && it.trigger.input == input }
+            val presses = mine.map { it.trigger.press }.toSet()
+            val moves = presses == setOf(Press.TAP) && mine.single().action in setOf(OrbitActions.FORWARD, OrbitActions.BACK)
+            Slot(dev, input, presses, moves) { p -> mine.firstOrNull { it.trigger.press == p }?.let { emitAction(it.action, 1, null) } }
         }
     }
 
-    private fun slot(device: String?, input: String) = slots.firstOrNull { it.cfg.device == device && it.input.id == input }
+    // a trigger recorded on one device wins over the same key from any device
+    private fun slot(device: String?, input: String) =
+        slots.firstOrNull { it.device != null && it.device == device && it.input == input } ?: slots.firstOrNull { it.device == null && it.input == input }
 
     fun has(device: String?, input: String) = slot(device, input) != null
 
-    /** A key down / up. True if it belongs to a configuration (the platform swallows it). */
+    /** A key down / up. True if a control uses it (the platform swallows it). */
     fun onKey(device: String?, input: String, down: Boolean, now: Long): Boolean {
         val s = slot(device, input) ?: return false
-        if (down) s.r.down(now) else s.r.up(now)
+        if (down) s.r(device).down(now) else s.r(device).up(now)
         return true
     }
 
-    /** [n] taps of a button the device counts itself (earbud gesture, dial turn). */
-    fun pulse(device: String, input: String, n: Int = 1, source: String? = null): Boolean {
-        val s = slot(device, input) ?: return false
-        val action = s.cfg.actionFor(input, Press.TAP) ?: return true
-        emitAction(s.cfg, action, n, source)
+    /** [n] of an input the device counts itself (earbud gesture, dial turn, back tap). */
+    fun pulse(input: String, n: Int = 1, source: String? = null): Boolean {
+        val action = controls.bindings.firstOrNull { it.trigger.input == input }?.action ?: return false
+        emitAction(action, n, source)
         return true
     }
 
-    private fun emitAction(c: Config, action: String, n: Int, source: String?) {
-        emit(actionEvent(action, n, source ?: (CONTROLLER + c.name), Clock.now()))
-    }
+    private fun emitAction(action: String, n: Int, source: String?) =
+        emit(actionEvent(action, n, source ?: (CONTROLLER + "controls"), Clock.now()))
 
-    fun tick(now: Long) = slots.forEach { it.r.tick(now) }
-    fun nextWake(): Long? = slots.mapNotNull { it.r.nextWake() }.minOrNull()
+    fun tick(now: Long) = slots.forEach { s -> s.byDevice.values.forEach { it.tick(now) } }
+    fun nextWake(): Long? = slots.flatMap { it.byDevice.values }.mapNotNull { it.nextWake() }.minOrNull()
 
-    /** The headphones configuration uses the volume as a dial (else volume stays volume). */
-    fun volumeIsDial(): Boolean = configs.any { c -> c.isHeadphones && c.bindings.any { it.trigger.input.startsWith("vol:") } }
+    /** Headphone volume drives Orbit (else volume stays volume). */
+    fun volumeIsDial() = controls.uses("vol:")
 }

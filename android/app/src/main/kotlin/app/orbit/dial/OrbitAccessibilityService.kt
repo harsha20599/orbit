@@ -76,8 +76,8 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         prefsListener = SettingsStore.listen(this) {
             main.removeCallbacks(rebuild); main.postDelayed(rebuild, 150)          // one rebuild per save
         }
-        Orbit.reloadConfigs(this)
-        controlsListener = ControllerStore.listen(this) { main.post { Orbit.reloadConfigs(this) } }
+        Orbit.reloadControls(this)
+        controlsListener = ControllerStore.listen(this) { main.post { Orbit.reloadControls(this) } }
         scope.launch { Orbit.events.collect { ev -> engine.handle(ev) } }
         main.post(ticker)
         if (BuildConfig.DEBUG) registerDebugInjector()
@@ -134,15 +134,16 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         val code = event.keyCode
         val down = event.action == KeyEvent.ACTION_DOWN
         if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
-        if (code in ControllerStore.RESERVED) return false
+        val input = ControllerStore.inputOf(event)
         val dev = event.device
         if (Orbit.capturing()) {
+            if (input == null) return ControllerStore.isModifier(code)          // modifiers: part of a shortcut being recorded
             if (!down || event.repeatCount == 0)
-                Orbit.capture(Orbit.Captured("key:$code", down, ControllerStore.deviceId(dev), ControllerStore.deviceName(dev),
-                    ControllerStore.keyLabel(code), typing = dev?.keyboardType == android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC))
+                Orbit.capture(Orbit.Captured(input, down, ControllerStore.deviceId(dev), ControllerStore.deviceName(dev),
+                    typing = dev?.keyboardType == android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC))
             return true
         }
-        if (Orbit.enabled(this) && Orbit.key(ControllerStore.deviceId(dev), "key:$code", down)) return true
+        if (input != null && Orbit.enabled(this) && Orbit.key(ControllerStore.deviceId(dev), input, down)) return true
         if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
             Orbit.lastPhoneVolumeKey = Clock.now()      // not the dial: don't read that volume change as a turn
         }

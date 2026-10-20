@@ -20,6 +20,8 @@ class ControlsTest {
         repeat((gap / 10).toInt()) { now += 10; tick(now) }
     }
 
+    // ---------------------------------------------------------------- presses
+
     @Test fun tapOnlyFiresOnKeyDown() {
         val r = rec(Press.TAP)
         r.down(now)
@@ -39,7 +41,7 @@ class ControlsTest {
 
     @Test fun tapAndHoldNeedNoWaitAfterRelease() {
         val r = rec(Press.TAP, Press.HOLD)
-        r.press(80); assertEquals(listOf(Press.TAP), got)            // on release, no gap wait
+        r.press(80); assertEquals(listOf(Press.TAP), got)
         got.clear(); r.down(now); now += PressRecognizer.HOLD_MS; r.tick(now)
         assertEquals(listOf(Press.HOLD), got)                          // at the threshold, before release
         r.up(now + 500); assertEquals(listOf(Press.HOLD), got)
@@ -64,80 +66,97 @@ class ControlsTest {
         assertEquals(1, got.size)
     }
 
-    @Test fun defaultsByButtonCount() {
-        fun ins(n: Int) = (1..n).map { Input("key:$it", "K$it") }
-        fun cfg(n: Int) = Config("a", "A", "d", ins(n), Config.defaults(ins(n)))
-        assertEquals(Trigger("key:1", Press.TAP), cfg(1).triggerFor(OrbitActions.FORWARD))
-        assertEquals(Trigger("key:1", Press.HOLD), cfg(1).triggerFor(OrbitActions.OPEN))
-        assertEquals(Trigger("key:1", Press.DOUBLE), cfg(1).triggerFor(OrbitActions.SELECT))
-        assertEquals(Trigger("key:2", Press.TAP), cfg(2).triggerFor(OrbitActions.BACK))
-        assertEquals(Trigger("key:2", Press.HOLD), cfg(2).triggerFor(OrbitActions.OPEN))
-        assertEquals(Trigger("key:4", Press.TAP), cfg(4).triggerFor(OrbitActions.OPEN))
-        for (n in 1..4) {
-            assertTrue("$n buttons can open the wheel", cfg(n).triggerFor(OrbitActions.OPEN) != null)
-            assertTrue("$n buttons can select", cfg(n).triggerFor(OrbitActions.SELECT) != null)
+    // ---------------------------------------------------------------- controls
+
+    @Test fun everyPresetHasTheFourFunctions() {
+        Presets.ALL.forEach { p ->
+            listOf(OrbitActions.OPEN, OrbitActions.SELECT, OrbitActions.FORWARD).forEach { a ->
+                assertTrue("${p.name}: $a", p.controls.triggers(a).isNotEmpty())
+            }
         }
     }
 
-    @Test fun everyPresetOpensTheWheel() {
-        Presets.ALL.forEach { p -> assertTrue(p.name, Config.headphones(p).triggerFor(OrbitActions.OPEN) != null) }
-        assertTrue(Config.backTap("b").triggerFor(OrbitActions.SELECT) != null)
+    @Test fun addingATriggerMovesItAndSaysFromWhere() {
+        val c = Presets.VOLUME_KEYS.controls
+        val (c2, lost) = c.add(OrbitActions.SELECT, Trigger("key:24"))       // Volume + tap was "Move right"
+        assertEquals(OrbitActions.FORWARD, lost)
+        assertTrue(c2.triggers(OrbitActions.FORWARD).isEmpty())
+        assertTrue(Trigger("key:24") in c2.triggers(OrbitActions.SELECT))
+        assertNull(c2.preset)                                                  // no longer the preset as shipped
     }
 
-    @Test fun cmfPresetMatchesTheBudsGestures() {
-        val c = Config.headphones(Presets.CMF)
-        assertEquals(OrbitActions.OPEN, c.actionFor(Presets.NEXT, Press.TAP))
-        assertEquals(OrbitActions.FORWARD, c.actionFor(Presets.UP, Press.TAP))
-        assertEquals(OrbitActions.SELECT, c.actionFor(Presets.PLAY, Press.TAP))
+    @Test fun aFunctionCanHaveSeveralTriggers() {
+        var c = Presets.CMF.controls
+        c = c.add(OrbitActions.FORWARD, Trigger("key:24")).first
+        assertEquals(2, c.triggers(OrbitActions.FORWARD).size)
+        c = c.remove(OrbitActions.FORWARD, Trigger("vol:up"))
+        assertEquals(listOf(Trigger("key:24")), c.triggers(OrbitActions.FORWARD))
     }
 
-    @Test fun bindingMovesATriggerAndReportsWhoLostIt() {
-        val c = Config.keys("a", "A", "d", listOf(Input("key:1", "A"), Input("key:2", "B")))
-        val (c2, lost) = c.bind(OrbitActions.SELECT, Trigger("key:2", Press.TAP))       // B tap was "back"
-        assertEquals(OrbitActions.BACK, lost)
-        assertNull(c2.triggerFor(OrbitActions.BACK))
-        assertEquals(OrbitActions.SELECT, c2.actionFor("key:2", Press.TAP))
-        val (c3, _) = c2.bind(OrbitActions.SELECT, null)
-        assertNull(c3.triggerFor(OrbitActions.SELECT))
+    @Test fun countedInputsAreAlwaysTaps() {
+        val (c, _) = Controls(emptyList()).add(OrbitActions.OPEN, Trigger("backtap:1", Press.HOLD))
+        assertEquals(Press.TAP, c.triggers(OrbitActions.OPEN).single().press)
     }
 
-    @Test fun removingAButtonDropsItsBindings() {
-        val c = Config.keys("a", "A", "d", listOf(Input("key:1", "A"), Input("key:2", "B")))
-        val c2 = c.withInputs(listOf(Input("key:1", "A")))
-        assertTrue(c2.bindings.all { it.trigger.input == "key:1" })
+    @Test fun labels() {
+        assertEquals("Volume + · double tap", Trigger("key:24", Press.DOUBLE).label())
+        assertEquals("Ctrl+Shift+Space · tap", Trigger("key:62+ctrl+shift").label())
+        assertEquals("Back tap", Trigger("backtap:1").label())
+        assertEquals("Enter · hold on K380", Trigger("key:66", Press.HOLD, "dev", "K380").label())
     }
 
-    @Test fun hubRoutesByDeviceAndSwallowsOnlyItsButtons() {
+    // ---------------------------------------------------------------- hub
+
+    @Test fun hubSwallowsOnlyItsKeysAndPrefersTheRecordedDevice() {
         val events = mutableListOf<DialEvent>()
-        val hub = ConfigHub { events += it }
-        hub.set(listOf(Config.keys("a", "Remote", "remote", listOf(Input("key:24", "Vol+"))),
-            Config.phoneVolumeKeys("p")))
-        assertTrue(hub.onKey("remote", "key:24", true, now)); hub.onKey("remote", "key:24", false, now + 40)
-        assertTrue(hub.onKey(Config.BUILTIN, "key:24", true, now)); hub.onKey(Config.BUILTIN, "key:24", false, now + 40)
-        hub.tick(now + 400)                                   // 1-button remote: its tap waits for a possible double
-        assertFalse(hub.onKey("remote", "key:66", true, now))
-        assertFalse(hub.onKey("other", "key:24", true, now))
-        assertEquals(listOf(1, 1), events.map { it.delta })
-        assertEquals(setOf(CONTROLLER + "Remote", CONTROLLER + "Phone volume keys"), events.map { it.source }.toSet())
+        val hub = ControlsHub { events += it }
+        hub.set(Controls(listOf(
+            Binding(OrbitActions.FORWARD, Trigger("key:24")),                              // any device
+            Binding(OrbitActions.SELECT, Trigger("key:66", Press.TAP, "k380", "K380")),    // that keyboard only
+        )))
+        assertTrue(hub.onKey("builtin", "key:24", true, now))
+        assertTrue(hub.onKey("selfie", "key:24", true, now + 1)); hub.onKey("selfie", "key:24", false, now + 2)
+        assertTrue(hub.onKey("k380", "key:66", true, now))
+        assertFalse(hub.onKey("other-keyboard", "key:66", true, now))
+        assertFalse(hub.onKey("builtin", "key:25", true, now))
+        assertEquals(listOf(1, 1), events.filter { it.kind == Kind.ROTATE }.map { it.delta })
+        assertEquals(1, events.count { it.action == OrbitActions.SELECT })
     }
 
-    @Test fun pulsesUseTheirTapBindingWithCount() {
+    @Test fun shortcutsMatchExactly() {
+        val hub = ControlsHub { }
+        hub.set(Controls(listOf(Binding(OrbitActions.OPEN, Trigger("key:62+ctrl")))))
+        assertTrue(hub.has(null, "key:62+ctrl"))
+        assertFalse(hub.has(null, "key:62"))                                   // plain Space still types
+    }
+
+    @Test fun mixedSourcesInOneSetup() {
         val events = mutableListOf<DialEvent>()
-        val hub = ConfigHub { events += it }
-        hub.set(listOf(Config.headphones(Presets.CMF)))
-        assertTrue(hub.pulse(Config.HEADPHONES, Presets.UP, 3, "android-volume"))
-        assertTrue(hub.pulse(Config.HEADPHONES, Presets.NEXT))
-        assertEquals(DialEvent(Kind.ROTATE, 3, "android-volume", now), events[0])
-        assertEquals(OrbitActions.OPEN, events[1].action)
-        assertTrue(hub.volumeIsDial())
-        hub.set(listOf(Config.headphones(Presets.EARBUDS)))
+        val hub = ControlsHub { events += it }
+        hub.set(Presets.VOLUME_BACKTAP.controls)
+        assertTrue(hub.pulse("backtap:2"))
+        assertEquals(OrbitActions.OPEN, events.last().action)
+        assertTrue(hub.pulse("backtap:1"))
+        assertEquals(OrbitActions.SELECT, events.last().action)
+        assertFalse(hub.pulse("media:play"))                                   // not in this setup: music keeps playing
         assertFalse(hub.volumeIsDial())
-        assertFalse(hub.pulse(Config.HEADPHONES, Presets.UP))
     }
 
-    @Test fun disabledConfigsDoNothing() {
-        val hub = ConfigHub { }
-        hub.set(listOf(Config.phoneVolumeKeys("p").copy(enabled = false)))
-        assertFalse(hub.onKey(Config.BUILTIN, "key:24", true, now))
+    @Test fun dialTurnsCarryTheirCount() {
+        val events = mutableListOf<DialEvent>()
+        val hub = ControlsHub { events += it }
+        hub.set(Presets.CMF.controls)
+        hub.pulse("vol:up", 3, "android-volume")
+        assertEquals(DialEvent(Kind.ROTATE, 3, "android-volume", now), events.single())
+        assertTrue(hub.volumeIsDial())
+    }
+
+    @Test fun cableButtonCountsTapsDoublesHolds() {
+        val events = mutableListOf<DialEvent>()
+        val hub = ControlsHub { events += it }
+        hub.set(Presets.WIRED.controls)
+        hub.onKey("headphones", "media:hook", true, now); hub.onKey("headphones", "media:hook", false, now + 60)
+        hub.onKey("headphones", "media:hook", true, now + 120); hub.onKey("headphones", "media:hook", false, now + 180)
+        assertEquals(OrbitActions.SELECT, events.single().action)              // double = select, no wait after the 2nd
     }
 }

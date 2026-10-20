@@ -74,7 +74,7 @@ val OrbitColors = darkColorScheme(
 /** The app: Orbit's switch, setup (collapsed when done), the wheel and gestures, help. */
 class MainActivity : ComponentActivity() {
     private var refresh by mutableIntStateOf(0)
-    /** null = home, "add", or "edit:<config id>:<adding buttons>" */
+    /** null = home, or "controls" */
     private var screen by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,19 +82,10 @@ class MainActivity : ComponentActivity() {
         applyDebugExtras(intent)
         setContent {
             MaterialTheme(colorScheme = OrbitColors) {
-                when (val sc = screen) {
-                    null -> Home(refresh)
-                    "add" -> {
-                        BackHandler { screen = null }
-                        AddControllerScreen(a11yOn(), onSetUpA11y = { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) },
-                            onOpen = { id, add -> screen = "edit:$id:$add" }, onClose = { screen = null })
-                    }
-                    else -> {
-                        val (_, id, add) = sc.split(":", limit = 3).let { Triple(it[0], it[1], it.getOrNull(2) == "true") }
-                        BackHandler { screen = null; refresh++ }
-                        androidx.compose.runtime.key(id) { ConfigScreen(id, add) { screen = null; refresh++ } }
-                    }
-                }
+                if (screen == "controls") ControlsScreen(a11yOn(), onSetUpA11y = {
+                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                }) { screen = null; refresh++ }
+                else Home(refresh)
             }
         }
     }
@@ -143,7 +134,7 @@ class MainActivity : ComponentActivity() {
             top = {
                 item { OnOffCard() }
                 item { SetupCard { disclosure = true } }
-                controllersSection(refresh, onOpen = { screen = "edit:$it:false" }, onAdd = { screen = "add" }, onChanged = { refresh++ })
+                controlsSection(refresh, onOpen = { screen = "controls" })
             },
             bottom = {
                 item { Section("Help", "Something not working? These usually sort it out.") }
