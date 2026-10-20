@@ -41,6 +41,9 @@ python -m PyInstaller --noconfirm --windowed --name Orbit --icon build/Orbit.icn
   packaging/orbit_main.py
 
 PLIST=dist/Orbit.app/Contents/Info.plist
+VERSION=$(python -c "import orbit; print(orbit.__version__)")
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${VERSION%%-*}" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :LSUIElement bool true" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :LSMinimumSystemVersion string 13.0" "$PLIST"
 /usr/libexec/PlistBuddy -c "Add :NSAppleEventsUsageDescription string 'Orbit forwards play/pause/next from the dial to your music app.'" "$PLIST"

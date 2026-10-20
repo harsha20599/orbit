@@ -13,7 +13,6 @@ import sys
 from pathlib import Path
 
 from orbit.platform.base import Platform
-from orbit.platform.windows import etw
 
 
 def cache_dir() -> Path:
@@ -53,6 +52,7 @@ class WindowsPlatform(Platform):
         return WindowsOutput(media_source=self._media)
 
     def is_elevated(self):
+        from orbit.platform.windows import etw   # Windows-only DLLs: keep the package importable elsewhere
         return etw.is_admin()
 
     def relaunch_elevated(self, argv):
