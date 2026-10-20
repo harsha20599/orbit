@@ -152,13 +152,12 @@ object Presets {
 
     val CMF = p("cmf", "CMF Buds Pro 2", "Turn the case dial to move; press, double, triple, hold.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
-        b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"),
-        b("last_tool", "media:prev"), b(OrbitActions.ASSISTANT, "media:hold"))
+        b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"))
     val EARBUDS = p("earbuds", "AirPods & other earbuds", "Press or tap the earbud once, twice, three times.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.FORWARD, "media:next"), b(OrbitActions.OPEN, "media:prev"))
     val SPEAKER = p("speaker", "Speaker or headphones with buttons", "Play, next / previous and volume buttons.",
         b(OrbitActions.SELECT, "media:play"), b(OrbitActions.OPEN, "media:next"),
-        b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"), b("last_tool", "media:prev"))
+        b(OrbitActions.BACK, "vol:down"), b(OrbitActions.FORWARD, "vol:up"))
     val WIRED = p("wired", "Wired earphones", "The one button on the cable.",
         b(OrbitActions.FORWARD, "media:hook"), b(OrbitActions.SELECT, "media:hook", Press.DOUBLE), b(OrbitActions.OPEN, "media:hook", Press.HOLD))
     val VOLUME_KEYS = p("volume_keys", "Volume keys", "The phone's volume keys, or a selfie stick's.",
@@ -168,7 +167,18 @@ object Presets {
         b(OrbitActions.BACK, "key:25"), b(OrbitActions.FORWARD, "key:24"),
         b(OrbitActions.SELECT, "backtap:1"), b(OrbitActions.OPEN, "backtap:2"))
 
+    val BACKTAP = p("backtap", "Back tap", "Tap the back of the phone: twice to select, three times to open.",
+        b(OrbitActions.SELECT, "backtap:1"), b(OrbitActions.OPEN, "backtap:2"))
+
     val ALL = listOf(CMF, EARBUDS, SPEAKER, WIRED, VOLUME_KEYS, VOLUME_BACKTAP)
+    val BUDS = listOf(CMF, EARBUDS, SPEAKER, WIRED)
+
+    /** Several presets at once (earbuds + phone keys): every trigger kept. */
+    fun combine(vararg ps: Preset): Controls {
+        var c = Controls(emptyList())
+        ps.forEach { p -> p.controls.bindings.forEach { c = c.add(it.action, it.trigger).first } }
+        return c.copy(preset = ps.singleOrNull()?.id)
+    }
     fun byId(id: String?) = ALL.firstOrNull { it.id == id }
     val DEFAULT get() = CMF.controls
 }

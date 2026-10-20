@@ -74,7 +74,7 @@ val OrbitColors = darkColorScheme(
 /** The app: Orbit's switch, setup (collapsed when done), the wheel and gestures, help. */
 class MainActivity : ComponentActivity() {
     private var refresh by mutableIntStateOf(0)
-    /** null = home, or "controls" */
+    /** null = home, "controls", or "onboarding" (again, from Help) */
     private var screen by mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -82,10 +82,17 @@ class MainActivity : ComponentActivity() {
         applyDebugExtras(intent)
         setContent {
             MaterialTheme(colorScheme = OrbitColors) {
-                if (screen == "controls") ControlsScreen(a11yOn(), onSetUpA11y = {
-                    startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                }) { screen = null; refresh++ }
-                else Home(refresh)
+                when {
+                    screen == "onboarding" || !Orbit.prefs(this).getBoolean("onboarded", false) ->
+                        OnboardingScreen(refresh, ::setupSteps) { openControls ->
+                            Orbit.prefs(this).edit().putBoolean("onboarded", true).apply()
+                            screen = if (openControls) "controls" else null; refresh++
+                        }
+                    screen == "controls" -> ControlsScreen(a11yOn(), onSetUpA11y = {
+                        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                    }) { screen = null; refresh++ }
+                    else -> Home(refresh)
+                }
             }
         }
     }
@@ -142,6 +149,8 @@ class MainActivity : ComponentActivity() {
                     Group {
                         HelpRow(R.drawable.ic_settings, "Wheel won't open?", "Check the dial's gestures in Nothing X") { gestures = true }
                         androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HelpRow(R.drawable.ic_rotate_ccw, "Set up again", "Pick your earbuds and buttons from the start") { screen = "onboarding" }
+                        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         HelpRow(R.drawable.ic_edit, "Report a problem", "Copies the log, then opens GitHub Issues") {
                             copyLog()
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/harsha20599/orbit/issues/new/choose")))
@@ -164,8 +173,23 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private class SetupStep(val title: String, val sub: String, val done: Boolean, val optional: Boolean = false,
-                            val action: () -> Unit)
+    /** What these controls need: earbud presses need notification access (play / pause your
+     *  music); a hold needs Orbit as the voice-command app; the rest everyone needs. */
+    fun setupSteps(c: app.orbit.dial.core.Controls, onA11y: () -> Unit): List<SetupItem> = buildList {
+        add(SetupItem("Accessibility service", "Draws the wheel and performs actions.", a11yOn(), action = onA11y))
+        add(SetupItem("Notifications", "Shows that Orbit is on, with a Turn off button.", notifOn()) {
+            if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        })
+        if (c.uses("media:")) add(SetupItem("Notification access", "Lets a press still play / pause your music.", listenerOn()) {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        })
+        if (c.uses("media:hold")) add(SetupItem("Press-and-hold", "Needed for the hold: tap, then pick Orbit and Always.", holdIsOurs()) {
+            startActivity(Intent(Intent.ACTION_VOICE_COMMAND).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        })
+        add(SetupItem("Modify system settings", "For the Brightness tool.", writeOn(), optional = true) {
+            startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
+        })
+    }
 
     /** The master switch, as the first thing on the page. */
     @Composable
@@ -191,21 +215,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun SetupCard(onA11y: () -> Unit) {
         @Suppress("UNUSED_VARIABLE") val tick = refresh     // re-check every step on resume
-        val steps = listOf(
-            SetupStep("Accessibility service", "Draws the wheel and performs actions.", a11yOn(), action = onA11y),
-            SetupStep("Notifications", "Shows that Orbit is on, with a Turn off button.", notifOn()) {
-                if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
-            },
-            SetupStep("Notification access", "Lets a single press still play / pause your music.", listenerOn()) {
-                startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-            },
-            SetupStep("Press-and-hold", "Hold opens Claude: tap, then pick Orbit and Always.", holdIsOurs()) {
-                startActivity(Intent(Intent.ACTION_VOICE_COMMAND).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            },
-            SetupStep("Modify system settings", "Optional: for the Brightness tool.", writeOn(), optional = true) {
-                startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, Uri.parse("package:$packageName")))
-            },
-        )
+        val steps = setupSteps(ControllerStore.load(this), onA11y)
         val missing = steps.count { !it.done && !it.optional }
         var open by remember(missing) { mutableStateOf(missing > 0) }
         Column(Modifier.padding(top = 12.dp)) {

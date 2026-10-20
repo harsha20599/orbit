@@ -90,16 +90,16 @@ import app.orbit.dial.core.Presets
 import app.orbit.dial.core.Trigger
 import kotlinx.coroutines.delay
 
-private val clear @Composable get() = ListItemDefaults.colors(containerColor = Color.Transparent)
-private val SetGreen = Color(0xFF3DDC97)
+internal val clear @Composable get() = ListItemDefaults.colors(containerColor = Color.Transparent)
+internal val SetGreen = Color(0xFF3DDC97)
 
-@Composable private fun Div() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+@Composable internal fun Div() = HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
 @Composable
-private fun RowIcon(res: Int, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) =
+internal fun RowIcon(res: Int, tint: Color = MaterialTheme.colorScheme.onSurfaceVariant) =
     Icon(painterResource(res), null, Modifier.size(20.dp), tint = tint)
 
-private fun actionName(ctx: android.content.Context, a: String): String {
+internal fun actionName(ctx: android.content.Context, a: String): String {
     if (a.startsWith("launch:") && a.length > 7) {
         val pkg = a.removePrefix("launch:")
         val label = runCatching { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(pkg, 0)) }.getOrNull()
@@ -111,7 +111,7 @@ private fun actionName(ctx: android.content.Context, a: String): String {
 
 /** Green check when set, an empty ring when not (the wireframe's circles). */
 @Composable
-private fun SetMark(set: Boolean) {
+internal fun SetMark(set: Boolean) {
     val ring = MaterialTheme.colorScheme.outline
     Box(Modifier.size(26.dp).background(if (set) SetGreen else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
         if (set) Text("✓", color = Color(0xFF0B1A12), fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -120,7 +120,7 @@ private fun SetMark(set: Boolean) {
 }
 
 @Composable
-private fun TriggersText(ts: List<Trigger>) {
+internal fun TriggersText(ts: List<Trigger>) {
     if (ts.isEmpty()) Text("Not set", color = MaterialTheme.colorScheme.onSurfaceVariant)
     else Text(ts.joinToString("  or  ") { it.label() }, color = SetGreen, maxLines = 2, overflow = TextOverflow.Ellipsis)
 }
@@ -155,7 +155,7 @@ fun LazyListScope.controlsSection(tick: Int, onOpen: () -> Unit) {
 
 /** Every press while a controls screen is in front: captured, nothing acts. */
 @Composable
-private fun CaptureButtons(onPress: (Orbit.Captured) -> Unit) {
+internal fun CaptureButtons(onPress: (Orbit.Captured) -> Unit) {
     val cb by rememberUpdatedState(onPress)
     val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     DisposableEffect(lifecycle) {

@@ -159,4 +159,19 @@ class ControlsTest {
         hub.onKey("headphones", "media:hook", true, now + 120); hub.onKey("headphones", "media:hook", false, now + 180)
         assertEquals(OrbitActions.SELECT, events.single().action)              // double = select, no wait after the 2nd
     }
+
+    @Test fun presetsHaveOnlyTheFourFunctions() {
+        (Presets.ALL + Presets.BACKTAP).forEach { p ->
+            assertTrue(p.name, p.controls.bindings.all { it.action in OrbitActions.CORE })
+        }
+    }
+
+    @Test fun earbudsPlusVolumeKeysKeepsBoth() {
+        val c = Presets.combine(Presets.CMF, Presets.VOLUME_KEYS)
+        assertEquals(2, c.triggers(OrbitActions.FORWARD).size)                 // dial forward, Volume +
+        assertTrue(c.uses("media:") && c.uses("key:24"))
+        assertFalse(c.uses("media:hold"))                                       // no hold, so no voice-command permission
+        assertNull(c.preset)
+        assertEquals(Presets.CMF.id, Presets.combine(Presets.CMF).preset)
+    }
 }
