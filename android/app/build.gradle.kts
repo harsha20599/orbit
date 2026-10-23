@@ -26,7 +26,7 @@ android {
     defaultConfig {
         applicationId = "app.orbit.dial"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36
         versionCode = (System.getenv("ORBIT_VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("ORBIT_VERSION") ?: "0.1.1"
     }

@@ -297,7 +297,7 @@ fun ControlsScreen(a11yOn: Boolean, onSetUpA11y: () -> Unit, onClose: () -> Unit
                     ListItem(colors = clear, modifier = Modifier.clickable { addFn = true },
                         leadingContent = { RowIcon(R.drawable.ic_plus, MaterialTheme.colorScheme.primary) },
                         headlineContent = { Text("Add a function", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium) },
-                        supportingContent = { Text("Open assistant, previous tool, custom command",
+                        supportingContent = { Text("Previous tool, custom command",
                             color = MaterialTheme.colorScheme.onSurfaceVariant) })
                 }
                 HeardLine(heard)
