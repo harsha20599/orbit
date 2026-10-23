@@ -32,7 +32,9 @@ class EngineTest {
         override fun launch(pkg: String) { log += "launch:$pkg" }
         override fun volume() = 0.5f
         override fun haptic() {}
-        override fun shutter() { log += "shutter" }
+        var cameraInFront = true
+        override fun shutter(video: Boolean): Boolean { log += if (video) "record" else "shutter"; return cameraInFront }
+        override fun cameraMode(video: Boolean) { log += "mode:" + (if (video) "video" else "photo") }
         override fun nudge(direction: Int) { log += "nudge:$direction" }
         override fun tapPlayPause() { log += "tap" }
         override fun stepVolume(steps: Int) { log += "vol:$steps" }
@@ -51,6 +53,7 @@ class EngineTest {
     }
 
     private fun engine() = Engine(actions, ui, rot, defaultTools())
+    private fun hudTitle() = huds.last().title
     private fun Engine.ev(k: Kind, d: Int = 0) { now += 400; handle(DialEvent(k, d, "test", now)) }
 
     @Test fun startsOnVolumeWithPassthrough() {
@@ -168,13 +171,42 @@ class EngineTest {
         assertTrue(log.none { it.startsWith("media:") })
     }
 
-    @Test fun cameraPressIsTheShutterAndTurningDoesNothing() {
+    @Test fun cameraPressIsTheShutterInPhotoMode() {
+        val e = engine()
+        e.setTool("camera")
+        e.ev(Kind.CLICK); e.ev(Kind.CLICK)
+        assertEquals(listOf("shutter", "shutter"), log.filter { it == "shutter" })
+        assertTrue(log.none { it.startsWith("swipe") || it.startsWith("media:") || it.startsWith("mode:") })
+    }
+
+    @Test fun cameraTurnPicksVideoAndPressStartsAndStopsRecording() {
+        val e = engine()
+        e.setTool("camera")
+        e.ev(Kind.ROTATE, 1)                       // forward: Video
+        e.ev(Kind.ROTATE, 1)                       // already Video: no second switch
+        assertEquals(listOf("mode:video"), log.filter { it.startsWith("mode:") })
+        e.ev(Kind.CLICK)
+        assertEquals("Recording", hudTitle())
+        e.ev(Kind.ROTATE, -1)                      // ignored while recording
+        assertTrue(log.none { it == "mode:photo" })
+        e.ev(Kind.CLICK)
+        assertEquals("Video", hudTitle())
+        e.ev(Kind.ROTATE, -1)                      // back: Photo
+        e.ev(Kind.CLICK)
+        assertEquals(listOf("mode:video", "record", "record", "mode:photo", "shutter"),
+            log.filter { it.startsWith("mode:") || it == "record" || it == "shutter" })
+    }
+
+    @Test fun cameraNotInFrontOpensItWithoutCountingARecording() {
         val e = engine()
         e.setTool("camera")
         e.ev(Kind.ROTATE, 1)
-        e.ev(Kind.CLICK); e.ev(Kind.CLICK)
-        assertEquals(listOf("shutter", "shutter"), log.filter { it == "shutter" })
-        assertTrue(log.none { it.startsWith("swipe") || it.startsWith("media:") })
+        actions.cameraInFront = false
+        e.ev(Kind.CLICK)                           // only opens the camera in video mode
+        assertEquals("Video", hudTitle())
+        actions.cameraInFront = true
+        e.ev(Kind.CLICK)
+        assertEquals("Recording", hudTitle())
     }
 
     @Test fun slidesIsOneSidewaysSwipePerClick() {

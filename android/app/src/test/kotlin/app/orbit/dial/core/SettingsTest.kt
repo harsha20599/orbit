@@ -68,7 +68,7 @@ class SettingsTest {
         override fun launch(pkg: String) { log += "launch:$pkg" }
         override fun volume() = 0.5f
         override fun haptic() {}
-        override fun shutter() {}
+        override fun shutter(video: Boolean) = true
         override fun nudge(direction: Int) {}
         override fun tapPlayPause() {}
     }

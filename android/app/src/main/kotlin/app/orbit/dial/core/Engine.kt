@@ -231,8 +231,11 @@ interface Actions {
     fun launch(pkg: String)
     fun volume(): Float?
     fun haptic()
-    /** Take a photo: press the camera app's shutter, or open the camera if it isn't in front. */
-    fun shutter()
+    /** Press the camera app's shutter: a photo, or with [video] start / stop recording.
+     *  Opens the camera (in that mode) if it isn't in front; then returns false. */
+    fun shutter(video: Boolean = false): Boolean
+    /** Switch the camera app to its Photo or Video mode (opens the camera if needed). */
+    fun cameraMode(video: Boolean) {}
     /** A short slow drag (no fling): +1 moves content up (forward), -1 back. */
     fun nudge(direction: Int)
     /** Press the front app's play / pause control (by label), else tap the screen centre. */

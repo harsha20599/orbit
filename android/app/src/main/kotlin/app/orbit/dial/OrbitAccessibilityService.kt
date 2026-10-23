@@ -55,6 +55,7 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
     private val rebuild = Runnable {
         engine.shutdown()
         engine = buildEngine()
+        updateBackTap()                                   // sensitivity / back-tap settings may have changed
         Orbit.log("settings applied: wheel ${engine.wheel.map { it.id }}, start ${engine.tool.id}")
     }
 
@@ -74,10 +75,7 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         overlay = OverlayController(this)
         engine = buildEngine()
         prefsListener = SettingsStore.listen(this) {
-            main.removeCallbacks(rebuild)
-        Orbit.onMotionNeed = null
-        screenRx?.let { runCatching { unregisterReceiver(it) } }
-        setSensors(false, false, false); main.postDelayed(rebuild, 150)          // one rebuild per save
+            main.removeCallbacks(rebuild); main.postDelayed(rebuild, 150)          // one rebuild per save
         }
         Orbit.onMotionNeed = { main.post { updateBackTap() } }
         screenRx = object : android.content.BroadcastReceiver() {
@@ -119,6 +117,9 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         controlsListener?.let { Orbit.prefs(this).unregisterOnSharedPreferenceChangeListener(it) }
         main.removeCallbacks(rebuild)
         debugRx?.let { runCatching { unregisterReceiver(it) } }
+        Orbit.onMotionNeed = null
+        screenRx?.let { runCatching { unregisterReceiver(it) } }
+        setSensors(false, false, false)
         main.removeCallbacks(ticker)
         scope.cancel()
         if (::overlay.isInitialized) overlay.destroy()
@@ -303,32 +304,66 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         haptic()
     }
 
-    // ---- camera shutter
+    // ---- camera: shutter, record, photo / video mode
     private val shutterWords = Regex("shutter|take (a )?(photo|picture)|capture|photo button", RegexOption.IGNORE_CASE)
+    private val recordWords = Regex("record|stop|shutter|capture", RegexOption.IGNORE_CASE)
 
-    override fun shutter() {
+    /** The camera app in front, or null after opening it (in [video] mode). */
+    private fun cameraInFront(video: Boolean): android.view.accessibility.AccessibilityNodeInfo? {
         val root = rootInActiveWindow
         val pkg = root?.packageName?.toString()
-        if (root == null || pkg == null || !isCameraApp(pkg)) {
-            Orbit.log("shutter: no camera in front, opening it")
-            runCatching {
-                startActivity(Intent(android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            }
-            return
-        }
-        val node = findShutter(root)
+        if (root != null && pkg != null && isCameraApp(pkg)) return root
+        Orbit.log("camera: not in front, opening it (${if (video) "video" else "photo"})")
+        openCamera(video)
+        return null
+    }
+
+    private fun openCamera(video: Boolean) = runCatching {
+        startActivity(Intent(if (video) android.provider.MediaStore.INTENT_ACTION_VIDEO_CAMERA
+                             else android.provider.MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    override fun shutter(video: Boolean): Boolean {
+        val root = cameraInFront(video) ?: return false
+        val pkg = root.packageName
+        val node = findButton(root, if (video) recordWords else shutterWords, if (video) listOf("shutter", "record") else listOf("shutter"))
         if (node != null && node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) {
-            Orbit.log("shutter: pressed '${node.contentDescription ?: node.viewIdResourceName}' in $pkg")
+            Orbit.log("camera: pressed '${node.contentDescription ?: node.viewIdResourceName}' in $pkg")
             haptic()
-            return
+            return true
         }
-        // no labelled button: tap where camera apps put the shutter (bottom centre)
+        // no labelled button: tap where camera apps put the shutter / record button (bottom centre)
         val dm = resources.displayMetrics
         val p = Path().apply { moveTo(dm.widthPixels / 2f, dm.heightPixels * 0.87f) }
         dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(p, 0, 60)).build(), null, main)
-        Orbit.log("shutter: no labelled button in $pkg, tapped bottom centre")
+        Orbit.log("camera: no labelled button in $pkg, tapped bottom centre")
         haptic()
+        return true
+    }
+
+    /** Tap the camera app's "Video" / "Photo" mode tab; without one, ask the app for that mode. */
+    override fun cameraMode(video: Boolean) {
+        val root = cameraInFront(video) ?: return
+        val want = if (video) Regex("^(video|videos|video mode|switch to video( mode)?)$", RegexOption.IGNORE_CASE)
+                   else Regex("^(photo|picture|photo mode|switch to photo( mode)?)$", RegexOption.IGNORE_CASE)
+        val queue = ArrayDeque(listOf(root))
+        var seen = 0
+        while (queue.isNotEmpty() && seen < 600) {
+            val n = queue.removeFirst(); seen++
+            val label = (n.text ?: n.contentDescription ?: "").toString().trim()
+            if (want.matches(label)) {
+                val target = if (n.isClickable) n else n.parent?.takeIf { it.isClickable }
+                if (target != null && target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) {
+                    Orbit.log("camera: mode '$label'"); return
+                }
+            }
+            for (i in 0 until n.childCount) n.getChild(i)?.let(queue::addLast)
+        }
+        // no tab on screen (e.g. modes in a drawer): ask the camera app for that mode; swiping
+        // instead is unsafe (in some apps a sideways swipe opens the gallery)
+        openCamera(video)
+        Orbit.log("camera: no ${if (video) "Video" else "Photo"} tab found, asked the camera for it")
     }
 
     private fun isCameraApp(pkg: String): Boolean {
@@ -337,8 +372,9 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         return handlers.any { it.activityInfo.packageName == pkg }
     }
 
-    /** The best shutter candidate: id says "shutter", or its label does; clickable (or its parent). */
-    private fun findShutter(root: android.view.accessibility.AccessibilityNodeInfo): android.view.accessibility.AccessibilityNodeInfo? {
+    /** The best button: its id has one of [ids], or its label matches [words]; clickable (or its parent). */
+    private fun findButton(root: android.view.accessibility.AccessibilityNodeInfo, words: Regex, ids: List<String>):
+            android.view.accessibility.AccessibilityNodeInfo? {
         var best: android.view.accessibility.AccessibilityNodeInfo? = null
         var bestScore = 0
         val queue = ArrayDeque(listOf(root))
@@ -346,8 +382,9 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         while (queue.isNotEmpty() && seen < 600) {
             val n = queue.removeFirst(); seen++
             var score = 0
-            if ("shutter" in (n.viewIdResourceName ?: "").lowercase()) score += 3
-            if (shutterWords.containsMatchIn("${n.contentDescription ?: ""} ${n.text ?: ""}")) score += 2
+            val id = (n.viewIdResourceName ?: "").lowercase()
+            if (ids.any { it in id }) score += 3
+            if (words.containsMatchIn("${n.contentDescription ?: ""} ${n.text ?: ""}")) score += 2
             if (score > bestScore) {
                 val target = if (n.isClickable) n else n.parent?.takeIf { it.isClickable }
                 if (target != null) { best = target; bestScore = score }

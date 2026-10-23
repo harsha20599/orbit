@@ -51,13 +51,32 @@ class SlidesTool : Tool("slides", "Slides", "presentation") {
     }
 }
 
-/** Remote shutter: with the Camera tool picked, each press of the dial takes a photo
- *  (opens the camera first if it isn't in front). Turning does nothing. */
+/** Remote shutter, photo and video. Turning picks the mode (forward = Video, back =
+ *  Photo) and switches the camera app to it; a press takes a photo, or starts / stops
+ *  recording. While recording, turning is ignored so a stray turn can't cut the clip. */
 class CameraTool : Tool("camera", "Camera", "camera") {
-    override fun rotate(a: Actions, delta: Int) = Hud(icon, label, "press the dial to take a photo")
-    override fun gesture(a: Actions, kind: Kind): Boolean =
-        if (kind == Kind.CLICK) { a.shutter(); true } else false
-    override fun hud(a: Actions, direction: Int) = Hud(icon, label, "press = shutter", direction = direction)
+    var video = false
+        private set
+    var recording = false
+        private set
+    override fun rotate(a: Actions, delta: Int): Hud {
+        if (recording) return hud(a, 0)
+        val want = delta > 0
+        if (want != video) { video = want; a.cameraMode(video); a.haptic() }
+        return hud(a, if (delta > 0) 1 else -1)
+    }
+    override fun gesture(a: Actions, kind: Kind): Boolean {
+        if (kind != Kind.CLICK) return false
+        // false: the camera was only opened (in this mode); nothing was recorded yet
+        if (a.shutter(video) && video) recording = !recording
+        return true
+    }
+    override fun leave(a: Actions) { recording = false }
+    override fun hud(a: Actions, direction: Int) = when {
+        recording -> Hud(icon, "Recording", "press to stop", direction = direction)
+        video -> Hud(icon, "Video", "press to record · turn back for photo", direction = direction)
+        else -> Hud(icon, "Photo", "press = shutter · turn for video", direction = direction)
+    }
 }
 
 /** Teleprompter apps (e.g. NEEWER Teleprompter): turning nudges the script up / down with
