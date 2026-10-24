@@ -26,6 +26,16 @@ MOD_VKS: dict[int, str] = {0x10: "shift", 0xA0: "shift", 0xA1: "shift", 0x11: "c
                           0x12: "alt", 0xA4: "alt", 0xA5: "alt", 0x5B: "win", 0x5C: "win"}
 
 WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP = 0x0100, 0x0101, 0x0104, 0x0105
+
+# dwExtraInfo on every key / mouse event Orbit sends itself (output.py), so the hooks can
+# skip exactly those. Not the INJECTED flag: Windows marks keys it makes from HID media
+# controls as injected too (a Bluetooth keyboard's volume knob arrives as injected
+# VK_VOLUME_UP / DOWN with scan code 0), and those must still reach Orbit.
+ORBIT_TAG = 0x0B17D1A1
+
+
+def own_event(extra_info: int) -> bool:
+    return extra_info == ORBIT_TAG
 WM_MBUTTONDOWN, WM_MBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP = 0x0207, 0x0208, 0x020B, 0x020C
 WM_MOUSEWHEEL, WM_MOUSEHWHEEL = 0x020A, 0x020E
 WHEEL_DELTA = 120

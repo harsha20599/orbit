@@ -2,11 +2,14 @@
 
 Installs a recording hook first (low-level hooks run newest first, so it sees only what
 gets past Orbit's hook, and it swallows everything so no app receives the test keys),
-then Orbit's capture with `b`, Ctrl+Space and the mouse forward button bound, then
-sends a, b, c, Ctrl+Space, Space and a forward click.
+then Orbit's capture with `b`, Ctrl+Space, the mouse forward button, Ctrl+scroll up and
+Volume Up bound, then sends a, b, c, Ctrl+Space, Space, a forward click, Ctrl+scroll,
+a plain scroll, and Volume Up twice: once untagged (how Windows injects a Bluetooth
+keyboard knob's keys) and once tagged as Orbit's own output.
 
-Expected: past Orbit = a, c, space (+ the ctrl presses themselves); Orbit's router got
-exactly b, Ctrl+Space and the forward button; nothing else.
+Expected: past Orbit = a, c, space, the plain scroll and the tagged Volume Up (+ the ctrl
+presses themselves); Orbit's router got b, Ctrl+Space, forward, Ctrl+scroll and the
+untagged Volume Up; nothing else.
 
     python tools/key_capture_check.py
 """
@@ -19,7 +22,7 @@ from ctypes import wintypes
 sys.path.insert(0, ".")
 from orbit.core.controls import Binding, Controls, Router, Trigger  # noqa: E402
 from orbit.platform.windows import input_keys as ik  # noqa: E402
-from orbit.platform.windows.keynames import VK_NAMES, mouse_input  # noqa: E402
+from orbit.platform.windows.keynames import ORBIT_TAG, VK_NAMES, mouse_input  # noqa: E402
 
 user32, kernel32 = ik.user32, ik.kernel32
 passed: list[str] = []
@@ -79,9 +82,9 @@ def send(*inputs):
     time.sleep(0.03)
 
 
-def key(vk, up=False):
+def key(vk, up=False, extra=0):
     i = INPUT(type=1)
-    i.ki = KEYBDINPUT(vk, 0, 0x2 if up else 0, 0, 0)
+    i.ki = KEYBDINPUT(vk, 0, 0x2 if up else 0, 0, extra)
     return i
 
 
@@ -105,8 +108,9 @@ rec_ready.wait(2)
 posted = []
 r = Router(posted.append, lambda m: None)
 r.set_controls(Controls((Binding("forward", Trigger("key:b")), Binding("open_wheel", Trigger("key:ctrl+space")),
-                         Binding("back", Trigger("mouse:forward")), Binding("select", Trigger("scroll:ctrl+up")))))
-cap = ik.WindowsKeyCapture(r, accept_injected=True)
+                         Binding("back", Trigger("mouse:forward")), Binding("select", Trigger("scroll:ctrl+up")),
+                         Binding("forward", Trigger("key:volumeup")))))
+cap = ik.WindowsKeyCapture(r)            # SendInput here is injected but untagged, like a BT knob
 cap.start()
 time.sleep(0.2)
 
@@ -119,16 +123,19 @@ send(key(SPACE), key(SPACE, True))
 send(xbutton(2, True), xbutton(2, False))
 send(key(CTRL), wheel(120), key(CTRL, True))                  # ctrl + scroll up: ours
 send(wheel(120))                                             # plain scroll: passes
+VOLUP = 0xAF
+send(key(VOLUP), key(VOLUP, True))                           # untagged (BT knob): ours
+send(key(VOLUP, extra=ORBIT_TAG), key(VOLUP, True, extra=ORBIT_TAG))   # Orbit's own: passes
 time.sleep(0.3)
 ms = (time.perf_counter() - t0) * 1000
 
 cap.stop()
 user32.PostThreadMessageW(rec.native_id, 0x12, 0, 0)
 got = [(e.kind.value, e.delta, e.action) for e in posted]
-want_past = ["a", "c", hex(CTRL), "space", hex(CTRL), "wheel"]
+want_past = ["a", "c", hex(CTRL), "space", hex(CTRL), "wheel", "volumeup"]
 past = [p if p != "ctrl" else hex(CTRL) for p in passed]
 ok = past == want_past and got == [("rotate", 1, None), ("action", 0, "open_wheel"), ("rotate", -1, None),
-                                                                                         ("click", 0, "select")]
+                                                                                         ("click", 0, "select"), ("rotate", 1, None)]
 print(f"past Orbit: {past}\nrouter:     {got}\n{ms:.0f} ms")
 print("PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)

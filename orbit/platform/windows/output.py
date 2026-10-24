@@ -10,6 +10,7 @@ import threading
 import time
 
 from orbit.platform.base import Output
+from orbit.platform.windows.keynames import ORBIT_TAG  # dwExtraInfo marker so our own input is recognisable
 
 log = logging.getLogger("orbit.output")
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -47,8 +48,6 @@ class _U(ctypes.Union):
 class INPUT(ctypes.Structure):
     _fields_ = [("type", wt.DWORD), ("u", _U)]
 
-
-ORBIT_TAG = 0x0B17D1A1  # dwExtraInfo marker so our own input is recognisable
 
 
 def _key(vk, up=False):

@@ -3,8 +3,10 @@
 Low-level keyboard and mouse hooks (WH_KEYBOARD_LL / WH_MOUSE_LL) on their own thread.
 A key or button that a control uses is swallowed (its usual action never happens) and
 handed to the controls router; everything else passes straight through. Events Orbit
-itself injects (SendInput: its keyboard shortcuts, scrolling) carry the INJECTED flag
-and are never looked at, so Orbit can't trigger itself.
+itself sends (SendInput: its keyboard shortcuts, scrolling) carry ORBIT_TAG in
+dwExtraInfo and are never looked at, so Orbit can't trigger itself. Other injected
+events are looked at: Windows injects the keys of HID media controls (a Bluetooth
+keyboard's volume knob), and those are controls like any key.
 
 Low-level hooks see every key from every keyboard, so a key is a control whichever
 keyboard it comes from. Windows drops a hook whose callback is slow, so the callback
@@ -17,12 +19,11 @@ import logging
 import threading
 from ctypes import wintypes
 
-from orbit.platform.windows.keynames import WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP, KeyTracker
+from orbit.platform.windows.keynames import WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP, KeyTracker, own_event
 
 log = logging.getLogger("orbit.keys")
 
 WH_KEYBOARD_LL, WH_MOUSE_LL = 13, 14
-LLKHF_INJECTED, LLMHF_INJECTED = 0x10, 0x01
 WM_QUIT = 0x0012
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -68,7 +69,7 @@ kernel32.GetModuleHandleW.restype = wintypes.HMODULE
 class WindowsKeyCapture:
     def __init__(self, router, accept_injected: bool = False):
         self.router = router
-        self.accept_injected = accept_injected        # tools/key_capture_check.py only: SendInput is injected
+        self.accept_injected = accept_injected        # tools/key_capture_check.py only: also take Orbit's own events
         self.tracker = KeyTracker(router.wants, router.key, router.wants_gesture, router.gesture)
         self.touchpad = None
         self._thread: threading.Thread | None = None
@@ -141,7 +142,7 @@ class WindowsKeyCapture:
     def _on_key(self, code, wparam, lparam):
         if code == 0:
             kb = KBDLLHOOKSTRUCT.from_address(lparam)
-            if (self.accept_injected or not kb.flags & LLKHF_INJECTED) and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP):
+            if (self.accept_injected or not own_event(kb.dwExtraInfo)) and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP):
                 try:
                     if self.tracker.keyboard(kb.vkCode, wparam in (WM_KEYDOWN, WM_SYSKEYDOWN)):
                         return 1
@@ -152,7 +153,7 @@ class WindowsKeyCapture:
     def _on_mouse(self, code, wparam, lparam):
         if code == 0:
             ms = MSLLHOOKSTRUCT.from_address(lparam)
-            if self.accept_injected or not ms.flags & LLMHF_INJECTED:
+            if self.accept_injected or not own_event(ms.dwExtraInfo):
                 try:
                     if self.tracker.mouse(wparam, ms.mouseData):
                         return 1

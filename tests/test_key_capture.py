@@ -31,6 +31,20 @@ def test_win_names():
     assert wk.VK_NAMES[ord("A")] == "a" and wk.VK_NAMES[ord("7")] == "7"
 
 
+def test_win_only_orbits_own_events_are_skipped():
+    # Windows injects a Bluetooth keyboard knob's volume keys: injected but not ours
+    assert wk.own_event(wk.ORBIT_TAG)
+    assert not wk.own_event(0)
+
+
+def test_win_knob_volume_keys_are_controls():
+    controls = Controls((Binding("back", Trigger("key:volumedown")), Binding("forward", Trigger("key:volumeup"))))
+    t, r, posted = tracker(controls)
+    for vk in (0xAF, 0xAF, 0xAE):
+        assert t.keyboard(vk, True) is True and t.keyboard(vk, False) is True
+    assert [e.delta for e in posted] == [1, 1, -1]
+
+
 def test_win_bound_key_is_swallowed_down_and_up():
     t, r, posted = tracker(Presets.F_KEYS.controls)
     assert t.keyboard(0x7C, True) is True                  # F13
