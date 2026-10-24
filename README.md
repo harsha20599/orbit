@@ -1,14 +1,18 @@
 # Orbit
 
-**Turn the dial on your CMF Buds Pro 2 case into a controller for your computer and phone.**
+**Turn the controls you already have into a controller for your computer and phone.**
 
-Double-press the dial to open a wheel of tools, turn to pick one, press to choose. Then the
-dial drives that tool: scroll pages and reels, flip slides, scrub a video timeline, change
-brightness, switch apps, undo / redo, take a photo, and more. Works on **Windows, macOS and
-Android**. Free and open source.
+Open a wheel of tools, move to pick one, press to choose. Then your control drives that tool:
+scroll pages and reels, flip slides, scrub a video timeline, change brightness, switch apps,
+undo / redo, take a photo or a video, and more. Works on **Windows, macOS and Android**. Free
+and open source.
 
-> **You need CMF Buds Pro 2** (the case with the dial), paired to the device you install Orbit on.
-> Orbit reads the dial through the buds' own Bluetooth controls; other earbuds aren't supported.
+**What can drive it:** the CMF Buds Pro 2 case dial (the original), any earbuds or headphones
+with buttons (AirPods, OnePlus, Galaxy, Pixel Buds…), wired earphones, Bluetooth speakers,
+keyboard volume knobs and media keys, any key or shortcut, mouse side buttons, Ctrl + scroll,
+trackpad gestures, and on Android the phone's volume keys, selfie sticks, remotes, game pads,
+back tap, chop and twist. Setup asks what you have and sets it up; Settings → Controls lets
+you change any trigger (Choose from a list, or Record by pressing it).
 
 ## Download
 
@@ -20,7 +24,7 @@ Get the latest version from **[Releases](https://github.com/harsha20599/orbit/re
 | **macOS 13+** (Apple Silicon) | `Orbit-macOS.zip` | Unzip, drag **Orbit.app** to Applications. The first time, **right-click → Open** (it isn't notarized yet). Allow **Accessibility** when asked (System Settings → Privacy & Security → Accessibility). |
 | **Android 8+** | `Orbit-Android.apk` | Open it on the phone and allow installing from your browser. Then in Orbit, follow the setup checklist. If the Accessibility switch is greyed out: App info → ⋮ → **Allow restricted settings**. |
 
-## Before you start: set the dial's gestures
+## CMF Buds Pro 2: set the dial's gestures
 
 Orbit reads the dial through the buds' music controls, so the dial has to send them.
 In the **Nothing X** app (on a Nothing phone: Settings → Connected devices → CMF Buds Pro 2)
@@ -99,7 +103,8 @@ Optional extra functions: Open assistant, Previous tool, Custom command (desktop
 
 ## Help and feedback
 
-Found a bug or have an idea? **[Open an issue](https://github.com/harsha20599/orbit/issues/new/choose)**.
+Questions, problems, ideas? Join **[Orbit on Telegram](https://t.me/orbit_issues)**, or
+**[open an issue](https://github.com/harsha20599/orbit/issues/new/choose)**.
 Logs help a lot: tray / menu-bar icon → Open log (Windows `%LOCALAPPDATA%\Orbit\orbit.log`,
 macOS `~/.orbit/orbit.log`); on Android, Help → **Report a problem** copies the log.
 

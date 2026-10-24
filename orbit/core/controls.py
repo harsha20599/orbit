@@ -336,6 +336,7 @@ class PressRecognizer:
         self.repeat = repeat
         self.emit = emit
         self.unused = unused          # n presses that no trigger used (the key should do its own job)
+        self.name = ""                # the input, for the log
         self.reset()
 
     def reset(self):
@@ -382,6 +383,8 @@ class PressRecognizer:
     def tick(self, now: float):
         d = self._down_at
         if d is not None and now - d + _EPS >= MAX_HOLD_S:
+            logging.getLogger("orbit.controls").info(
+                "%s held for %.0f s: its key-up was lost, let go", self.name or "a key", MAX_HOLD_S)
             self.release()
             return
         if d is not None:
@@ -464,6 +467,7 @@ class ControlsHub:
                     if self.replay:
                         self.replay(inp, n)
                 self._slots[inp] = PressRecognizer(presses, moves, fire, unused)
+                self._slots[inp].name = inp
 
     def has(self, inp: str) -> bool:
         """A control uses this key / button (the platform should swallow it)."""

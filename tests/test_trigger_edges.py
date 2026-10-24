@@ -4,6 +4,10 @@ presses right on the timing edges, keys bound only to a hold, fast knob clicks, 
 trackpads (palms, fingers added or lifted one by one) and scroll (trackpad fractions,
 momentum). Pure: no OS calls, any OS.
 """
+import sys
+
+import pytest
+
 from orbit.core.controls import (BACK, FORWARD, GAP_S, HOLD_S, MAX_HOLD_S, OPEN, REPEAT_DELAY_S, REPEAT_EVERY_S, SELECT,
                                  Binding, Controls, Press, Router, Trigger)
 from orbit.core.events import Kind
@@ -262,6 +266,7 @@ def test_win_only_tagged_events_are_ours():
         assert not wk.own_event(extra)
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="imports Windows-only DLLs (user32) at module load")
 def test_win_hook_quiet_watchdog_handles_tick_wrap():
     from orbit.platform.windows.input_keys import hooks_quiet
     assert hooks_quiet(10_000, 7_000)
@@ -392,6 +397,7 @@ def test_mac_release_all_after_secure_input():
     assert t.key("f13", set(), False, False) is False         # a late up passes
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="imports Windows-only DLLs (user32) at module load")
 def test_touchpad_palm_is_not_a_finger():
     from orbit.platform.windows.touchpad import U_CONFIDENCE, U_TIP, _Device
     d = _Device.__new__(_Device)                     # only the finger rule, no HID

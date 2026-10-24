@@ -101,9 +101,9 @@ jobs:
         env:
           ORBIT_KEYSTORE_PASSWORD: ${{ secrets.ORBIT_KEYSTORE_PASSWORD }}
           ORBIT_KEY_ALIAS: orbit
-          ORBIT_VERSION_CODE: ${{ github.run_number }}
         run: |
           export ORBIT_VERSION="${VERSION#v}"
+          export ORBIT_VERSION_CODE=$((GITHUB_RUN_NUMBER + 100))   # above every tailnet test build (they went to 9)
           chmod +x gradlew
           ./gradlew --no-daemon testDebugUnitTest assembleRelease
           cp app/build/outputs/apk/release/app-release.apk ../Orbit-Android.apk

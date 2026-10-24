@@ -277,7 +277,13 @@ class _Group(QFrame):
         self.box.setSpacing(0)
 
     def rows(self) -> list[QWidget]:
-        return [self.box.itemAt(i).widget() for i in range(self.box.count())]
+        # Child widgets in layout order. Not box.itemAt(i).widget(): PySide keeps wrappers for
+        # the QWidgetItems Qt deletes when a row is removed, and a QStyle later allocated at the
+        # same address comes back as that stale wrapper ("'QWidgetItem' object has no attribute
+        # 'unpolish'" in restyle, intermittently).
+        kids = [w for w in self.findChildren(QWidget, options=Qt.FindDirectChildrenOnly)
+                if self.box.indexOf(w) >= 0]
+        return sorted(kids, key=self.box.indexOf)
 
     def restyle(self):
         rows = [r for r in self.rows() if r is not None]
