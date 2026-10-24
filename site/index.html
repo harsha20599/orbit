@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Orbit: the CMF Buds Pro 2 dial as a controller</title>
-<meta name="description" content="Turn the dial on your CMF Buds Pro 2 case into a controller for Windows, macOS and Android. Scroll reels, flip slides, scrub video, switch apps. Free, source on GitHub.">
-<meta property="og:title" content="Orbit: your earbuds case is now a controller">
-<meta property="og:description" content="Double-press the CMF Buds Pro 2 dial, turn to pick, press to choose. Windows, macOS, Android. Free.">
+<title>Orbit: any button is a controller</title>
+<meta name="description" content="Turn earbuds, a keyboard knob, keys, mouse buttons or trackpad gestures into a wheel of tools for Windows, macOS and Android. Scroll reels, flip slides, scrub video, switch apps. Free, source on GitHub.">
+<meta property="og:title" content="Orbit: any button is now a controller">
+<meta property="og:description" content="Open the wheel, move to a tool, select it. Earbuds, keys, knobs, mouse, trackpad. Windows, macOS, Android. Free.">
 <meta property="og:image" content="orbit.png">
 <link rel="icon" href="orbit.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -116,14 +116,14 @@
 
   <div class="hero">
     <div>
-      <h1>Your earbuds case is now a <em>controller</em>.</h1>
-      <p class="lede">Orbit turns the dial on the CMF Buds Pro 2 into a wheel of tools for your computer and phone. Scroll reels, flip slides, scrub video, switch apps.</p>
+      <h1>Any button is now a <em>controller</em>.</h1>
+      <p class="lede">Orbit turns your earbuds, a keyboard knob, any key, mouse buttons or trackpad gestures into a wheel of tools for your computer and phone. Scroll reels, flip slides, scrub video, switch apps.</p>
       <div class="cta">
         <a class="btn primary" id="dl" href="#download">Download Orbit</a>
         <a class="btn ghost" href="#how">See how it works</a>
       </div>
       <p class="others" id="others"></p>
-      <p class="fine">Free · Windows, macOS, Android · Works with any controls, made for the CMF Buds Pro 2 dial</p>
+      <p class="fine">Free · Windows, macOS, Android · Questions? <a href="https://t.me/orbit_issues">Telegram</a></p>
     </div>
     <div class="stage" aria-hidden="true">
       <div class="spill"></div>
@@ -138,7 +138,7 @@
         <span data-n="Desktops" style="--a:270deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg></span>
         <span data-n="Camera" style="--a:315deg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg></span>
       </div>
-      <div class="centre"><div><b id="selname">Volume</b><small>turn to pick · press to choose</small></div></div>
+      <div class="centre"><div><b id="selname">Volume</b><small>move to pick · press to choose</small></div></div>
     </div>
   </div>
 </div>
@@ -146,29 +146,29 @@
 <section id="how">
   <div class="wrap">
     <h2>Three moves. That's the whole thing.</h2>
-    <p class="sub">No new hardware. Orbit listens to the dial through the buds' own Bluetooth controls, so it works the moment they're connected.</p>
+    <p class="sub">No new hardware. Orbit listens to buttons you already have: earbuds, a keyboard knob, a key, a mouse button, a trackpad gesture, or on Android the phone's volume keys and a tap on its back. Setup asks what you have.</p>
     <div class="steps">
-      <div class="step"><div class="pips"><i></i><i></i></div><h3>Double-press</h3><p>The wheel opens on your screen, wherever you are.</p></div>
-      <div class="step"><div class="pips"><i class="ring"></i></div><h3>Turn</h3><p>Glide to a tool: the item you land on lights up the wheel around it.</p></div>
-      <div class="step"><div class="pips"><i></i></div><h3>Press</h3><p>Now the dial drives that tool, until you double-press again.</p></div>
+      <div class="step"><div class="pips"><i></i><i></i></div><h3>Open</h3><p>Press your "open menu" button (a double press on earbuds) and the wheel appears, wherever you are.</p></div>
+      <div class="step"><div class="pips"><i class="ring"></i></div><h3>Move</h3><p>Next / Previous (volume up / down, a knob, a swipe) glides to a tool; it lights up the wheel around it.</p></div>
+      <div class="step"><div class="pips"><i></i></div><h3>Select</h3><p>Now your buttons drive that tool, until you open the wheel again.</p></div>
     </div>
   </div>
 </section>
 
 <section>
   <div class="wrap">
-    <h2>What the dial can do</h2>
-    <p class="sub">Pick what's on the wheel, its order and what every press does, in Settings.</p>
+    <h2>What it can do</h2>
+    <p class="sub">Pick what's on the wheel and its order in Settings, and which button does what in Settings → Controls.</p>
     <div class="tools">
-      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg><div><b>Scroll &amp; reels</b><span>Smooth page scrolling; one flick per click on your phone.</span></div></div>
-      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/></svg><div><b>Slides</b><span>One slide per click. Press to black out the screen.</span></div></div>
+      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></svg><div><b>Scroll &amp; reels</b><span>Smooth page scrolling; one reel or Short per step on your phone.</span></div></div>
+      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="m7 21 5-5 5 5"/></svg><div><b>Slides</b><span>One slide per step. Press to black out the screen.</span></div></div>
       <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M7 3v18"/><path d="M3 12h18"/><path d="M17 3v18"/></svg><div><b>Video timeline</b><span>Glide through DaVinci Resolve, Premiere or Final Cut. Press to play.</span></div></div>
       <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg><div><b>App switcher</b><span>Turn through your open apps, let go to jump.</span></div></div>
-      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/></svg><div><b>Volume &amp; brightness</b><span>Exact clicks when slow, big moves when fast.</span></div></div>
-      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg><div><b>Camera shutter</b><span>Press the dial, take the photo. Great with a tripod.</span></div></div>
-      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="M8 8h8"/><path d="M8 11h5"/></svg><div><b>Teleprompter</b><span>Android: turn to move the script, press to play or pause. Switch it on in the app's Wheel items.</span></div></div>
-      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><div><b>Undo, tabs, desktops</b><span>Turn back through history, tabs or virtual desktops.</span></div></div>
-      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M7 16h10"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/></svg><div><b>Your own shortcuts</b><span>Add any key combo to the wheel. Open any app with a triple press.</span></div></div>
+      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M2 12h2"/><path d="M20 12h2"/></svg><div><b>Volume &amp; brightness</b><span>Exact steps when slow, big moves when fast. Laptop screens too.</span></div></div>
+      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg><div><b>Camera</b><span>Take a photo or start / stop a video from across the room. Great with a tripod.</span></div></div>
+      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h20"/><path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3"/><path d="M8 8h8"/><path d="M8 11h5"/></svg><div><b>Teleprompter</b><span>Android: move the script, press to play or pause. Switch it on in the app's Wheel items.</span></div></div>
+      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg><div><b>Undo, tabs, desktops</b><span>Step back through history, tabs or virtual desktops.</span></div></div>
+      <div class="tool"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="M7 16h10"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/></svg><div><b>Your own shortcuts</b><span>Add any key combo to the wheel.</span></div></div>
     </div>
   </div>
 </section>
@@ -176,14 +176,13 @@
 <section id="download">
   <div class="wrap">
     <h2>Download</h2>
-    <p class="sub">Pair your CMF Buds Pro 2 with the device first. Then set the dial's gestures in the <b>Nothing X</b> app
-      (on Nothing phones: Settings → Connected devices → CMF Buds Pro 2) → Controls → Dial: <b>single press</b> Play/Pause,
-      <b>double</b> Next track, <b>triple</b> Previous track, <b>hold</b> Voice assistant. Orbit listens for exactly those.
-      Then install Orbit:</p>
+    <p class="sub">Install Orbit and it asks <b>what you want to control it with</b>: earbuds, a volume knob or media keys,
+      mouse buttons, a trackpad, the phone's volume keys or back tap, or set it up yourself. Change it any time in
+      Settings → Controls. Full guide: <a href="https://github.com/harsha20599/orbit#readme">README</a>.</p>
     <div class="plat">
-      <div><h3>Windows</h3><p>Windows 10 or 11. If Windows says "protected your PC", choose <i>More info → Run anyway</i>. Allow admin when Orbit starts (for press-and-hold).</p><a class="btn primary" href="https://github.com/harsha20599/orbit/releases/latest/download/Orbit-Windows-Setup.exe">Download for Windows</a></div>
-      <div><h3>macOS</h3><p>macOS 13+ on Apple Silicon. Unzip, move to Applications, right-click → <i>Open</i> the first time, then allow Accessibility.</p><a class="btn primary" href="https://github.com/harsha20599/orbit/releases/latest/download/Orbit-macOS.zip">Download for Mac</a></div>
-      <div><h3>Android</h3><p>Android 8+. Install the APK, then follow the checklist in the app. If a switch is greyed out: App info → ⋮ → <i>Allow restricted settings</i>.</p><a class="btn primary" href="https://github.com/harsha20599/orbit/releases/latest/download/Orbit-Android.apk">Download for Android</a></div>
+      <div><h3>Windows</h3><p>Windows 10 or 11. If Windows says "protected your PC", choose <i>More info → Run anyway</i>. Orbit lives in the system tray.</p><a class="btn primary" href="https://github.com/harsha20599/orbit/releases/latest/download/Orbit-Windows-Setup.exe">Download for Windows</a></div>
+      <div><h3>macOS</h3><p>macOS 13+ on Apple Silicon. Unzip, move to Applications, right-click → <i>Open</i> the first time, then allow Accessibility. After updating, switch Orbit off and on again in that list.</p><a class="btn primary" href="https://github.com/harsha20599/orbit/releases/latest/download/Orbit-macOS.zip">Download for Mac</a></div>
+      <div><h3>Android</h3><p>Android 8+. Install the APK and follow the setup in the app. If a switch is greyed out: App info → ⋮ → <i>Allow restricted settings</i>. Phone buttons work while the screen is on.</p><a class="btn primary" href="https://github.com/harsha20599/orbit/releases/latest/download/Orbit-Android.apk">Download for Android</a></div>
     </div>
     <p class="fine">Every version and its notes: <a href="https://github.com/harsha20599/orbit/releases">all releases</a>. Want to know about updates? Click <i>Watch → Custom → Releases</i> on <a href="https://github.com/harsha20599/orbit">GitHub</a>.</p>
   </div>
@@ -192,13 +191,13 @@
 <section id="faq">
   <div class="wrap">
     <h2>Questions</h2>
-    <details><summary>The wheel never opens when I double-press.</summary><p>Set the dial gestures in Nothing X (see Download above): double press must be "Next track". On Android, Help → "Wheel won't open?" in the app turns green when a press arrives. On Windows, the tray menu should say "Buds connected".</p></details>
-    <details><summary>How do I turn Orbit off?</summary><p>Windows and Mac: tray / menu-bar icon → untick "Orbit on". Android: the switch at the top of the app, "Turn off" on its notification, or the Orbit Quick Settings tile. While off, the buds work normally.</p></details>
-    <details><summary>Does it work with other earbuds, or without earbuds?</summary><p>Yes. Since 0.2 any earbuds or headphones with buttons work (press, double, triple), and so do keyboard volume knobs, media keys, any key or shortcut, mouse side buttons, Ctrl + scroll and trackpad gestures, plus the phone's volume keys, remotes, selfie sticks, back tap, chop and twist on Android. Setup asks what you have; Settings → Controls changes any of it.</p></details>
-    <details><summary>Why do fast spins skip a little?</summary><p>The buds send at most about three dial steps a second and drop the rest. Orbit makes fast turning go further to make up for it; slow clicks are always exact.</p></details>
-    <details><summary>Is it safe? What does it access?</summary><p>Orbit runs only on your device and sends nothing anywhere. The code is open on GitHub. On Android it uses an accessibility service to draw the wheel and do what you pick; it reads only the name of the app in front, and the camera's buttons when you use the Camera tool.</p></details>
+    <details><summary>The wheel never opens.</summary><p>Open Settings → Controls and press your "Open menu" button there: if it doesn't light up, Orbit isn't receiving it. Earbuds must be connected to this device, with their gestures set to play / pause, next and previous track. CMF Buds Pro 2: in Nothing X → Controls → Dial set single = Play/Pause, double = Next track, triple = Previous track, hold = Voice assistant. On Android, Help → "Wheel won't open?" turns green when a press arrives.</p></details>
+    <details><summary>How do I turn Orbit off?</summary><p>Windows and Mac: tray / menu-bar icon → untick "Orbit on". Android: the switch at the top of the app, "Turn off" on its notification, or the Orbit Quick Settings tile. While off, every button works as if Orbit weren't installed.</p></details>
+    <details><summary>What can I control it with?</summary><p>Any earbuds or headphones with buttons work (press, double, triple), and so do keyboard volume knobs, media keys, any key or shortcut, mouse side buttons, Ctrl + scroll and trackpad gestures, plus the phone's volume keys, remotes, selfie sticks, back tap, chop and twist on Android. Setup asks what you have; Settings → Controls changes any of it.</p></details>
+    <details><summary>Trackpad gestures also switch my desktops (Windows).</summary><p>Windows runs its own action for 3- and 4-finger gestures too. To use them only for Orbit, set them to "Nothing" in Settings → Bluetooth &amp; devices → Touchpad.</p></details>
+    <details><summary>Is it safe? What does it access?</summary><p>Orbit runs only on your device and sends nothing anywhere (it doesn't even have internet access). The code is on GitHub. It sees button presses so it can match your triggers; presses no trigger uses go straight on and aren't kept. On Android it also reads the name of the app in front, the camera's buttons when you use the Camera tool, and the motion sensor only while you use back tap, chop or twist.</p></details>
     <details><summary>Why does Windows warn about the installer?</summary><p>The installer isn't code-signed yet (that costs money every year), so Windows SmartScreen shows a warning for new apps. Choose More info → Run anyway. The source is public if you'd rather build it yourself.</p></details>
-    <details><summary>The clicks make a little sound in the buds.</summary><p>That's the buds' own volume tone; apps can't turn it off. Orbit keeps your music level steady while you use tools.</p></details>
+    <details><summary>Can I use the code?</summary><p>Yes, free to use and change. If you share something built on Orbit publicly (an app, a fork, a video), credit "Based on Orbit by Yemcube" with a link to <a href="https://www.instagram.com/yem.cube">@yem.cube</a> on Instagram. <a href="https://github.com/harsha20599/orbit/blob/main/LICENSE">Full license</a>.</p></details>
     <details><summary>Something isn't working, or I have an idea.</summary><p>Ask in <a href="https://t.me/orbit_issues">Orbit on Telegram</a>, or <a href="https://github.com/harsha20599/orbit/issues/new/choose">open an issue</a> with your device and the log (Windows: tray icon → Open log; Mac: ~/.orbit/orbit.log; Android: "Copy log" in the app).</p></details>
   </div>
 </section>

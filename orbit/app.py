@@ -133,7 +133,7 @@ def self_args(argv: list[str]) -> list[str]:
 
 
 def parse_args(argv):
-    ap = argparse.ArgumentParser(prog="orbit", description="Dial + wheel menu for CMF Buds Pro 2")
+    ap = argparse.ArgumentParser(prog="orbit", description="Orbit: a wheel of tools you drive with any buttons")
     ap.add_argument("--config", help="path to config.toml")
     ap.add_argument("--no-elevate", action="store_true", help="don't ask for admin (press-and-hold stays off)")
     ap.add_argument("--dev", action="store_true", help="accept injected events on udp 127.0.0.1:47800")
@@ -240,7 +240,7 @@ def main(argv=None):
     # ---- tray
     off_flag = data_dir() / "off"
     tray = QSystemTrayIcon(tray_icon(cfg["ui"]["accent"]))
-    tray.setToolTip("Orbit: double-press the dial to open the wheel")
+    tray.setToolTip("Orbit: press your Open menu button to open the wheel")
     menu = QMenu()
     a_status = QAction("")
     a_status.setEnabled(False)
@@ -255,8 +255,8 @@ def main(argv=None):
         except OSError:
             pass
         tray.setIcon(tray_icon(cfg["ui"]["accent"], on))
-        tray.setToolTip("Orbit is on: double-press the dial to open the wheel" if on else
-                        "Orbit is off: the buds work normally")
+        tray.setToolTip("Orbit is on: press your Open menu button to open the wheel" if on else
+                        "Orbit is off: every button works as normal")
         if a_on.isChecked() != on:
             a_on.setChecked(on)
 
@@ -391,7 +391,7 @@ def main(argv=None):
         where = "in the system tray (click ^ by the clock if you don't see it)" if sys.platform == "win32" \
             else "in the menu bar"
         QTimer.singleShot(1500, lambda: tray.showMessage(
-            "Orbit is running", f"It lives {where}. Double-press the dial to open the wheel.",
+            "Orbit is running", f"It lives {where}. Press your Open menu button to open the wheel.",
             app_icon(), 8000))
         QTimer.singleShot(1800, open_settings)
         try:

@@ -147,7 +147,7 @@ class MainActivity : ComponentActivity() {
                 item { Section("Help", "Something not working? These usually sort it out.") }
                 item {
                     Group {
-                        HelpRow(R.drawable.ic_settings, "Wheel won't open?", "Check the dial's gestures in Nothing X") { gestures = true }
+                        HelpRow(R.drawable.ic_settings, "Wheel won't open?", "Check that your earbuds' presses reach Orbit") { gestures = true }
                         androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         HelpRow(R.drawable.ic_rotate_ccw, "Set up again", "Pick your earbuds and buttons from the start") { screen = "onboarding" }
                         androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                             startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/harsha20599/orbit/issues/new/choose")))
                         }
                     }
-                    Text("Orbit ${BuildConfig.VERSION_NAME} · free and open source", style = MaterialTheme.typography.bodySmall,
+                    Text("Orbit ${BuildConfig.VERSION_NAME} · free · by Yemcube (@yem.cube)", style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(top = 18.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
                 }
@@ -202,7 +202,7 @@ class MainActivity : ComponentActivity() {
                 Column(Modifier.weight(1f)) {
                     Text(if (on) "Orbit is on" else "Orbit is off", style = MaterialTheme.typography.titleLarge,
                         color = if (on) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
-                    Text(if (on) "Double-press the dial, or use your controller, to open the wheel." else "The buds work normally: press plays, the dial sets volume.",
+                    Text(if (on) "Press your Open menu button to open the wheel." else "Every button works as normal until you turn Orbit on.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (on) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -279,11 +279,13 @@ class MainActivity : ComponentActivity() {
         }
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text(if (seen) "Presses reach Orbit ✓" else "Press the dial once") },
-            text = { Text(if (seen) "Orbit hears the dial. Double-press opens the wheel." else
-                "If nothing changes here when you press, the dial isn't sending its music controls. " +
-                "In the Nothing X app (on Nothing phones: Settings → Connected devices → CMF Buds Pro 2) → Controls → Dial, set:\n\n" +
-                "• Single press: Play / Pause\n• Double press: Next track\n• Triple press: Previous track\n• Press and hold: Voice assistant") },
+            title = { Text(if (seen) "Presses reach Orbit ✓" else "Press your earbuds once") },
+            text = { Text(if (seen) "Orbit hears your earbuds. Check which press opens the wheel in Set up controls." else
+                "If nothing changes here when you press, your earbuds aren't sending music controls to this phone. " +
+                "Make sure they're connected, and if they have their own app, set their gestures to play / pause, next and previous track.\n\n" +
+                "CMF Buds Pro 2: in the Nothing X app (on Nothing phones: Settings → Connected devices → CMF Buds Pro 2) → Controls → Dial, set " +
+                "single press Play / Pause, double Next track, triple Previous track, hold Voice assistant.\n\n" +
+                "Keys, remotes and back taps: Set up controls shows each press as you make it.") },
             confirmButton = {
                 if (seen) Button(onDismiss) { Text("Done") }
                 else Button({

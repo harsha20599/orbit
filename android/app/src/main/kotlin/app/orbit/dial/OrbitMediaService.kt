@@ -242,7 +242,7 @@ class OrbitMediaService : Service() {
             PendingIntent.FLAG_IMMUTABLE)
         val n = Notification.Builder(this, "dial")
             .setContentTitle("Orbit is on")
-            .setContentText("Double-press the dial, or use your controller, to open the wheel")
+            .setContentText("Press your Open menu button to open the wheel")
             .setSmallIcon(R.drawable.ic_settings)
             .setContentIntent(open)
             .setOngoing(true)

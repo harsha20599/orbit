@@ -534,7 +534,7 @@ class SettingsWindow(QWidget):
         title = QLabel("Orbit")
         title.setFont(_font(22, QFont.Bold))
         lv.addWidget(title)
-        sub = QLabel("Your dial, your wheel.")
+        sub = QLabel("Your buttons, your wheel.")
         sub.setObjectName("meta2")
         lv.addWidget(sub)
         lv.addSpacing(18)
@@ -605,7 +605,7 @@ class SettingsWindow(QWidget):
         v.addSpacing(34)
         v.addWidget(self._heading("Shortcuts"))
         v.addSpacing(4)
-        v.addWidget(self._help("Wheel items that press a key combo. Pick one on the wheel and press the dial "
+        v.addWidget(self._help("Wheel items that press a key combo. Pick one on the wheel and press Select "
                                "to send it to the app you're in."))
         v.addSpacing(14)
         self.sc_group = _Group()

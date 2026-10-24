@@ -13,17 +13,22 @@ body:
     id: version
     attributes:
       label: Orbit version
-      placeholder: e.g. 0.1.0
+      placeholder: e.g. 0.2.0
+  - type: input
+    id: controls
+    attributes:
+      label: What are you controlling Orbit with?
+      placeholder: "e.g. OnePlus Buds 3 Pro, a Keychron knob, mouse side buttons, back tap"
   - type: textarea
     id: what
     attributes:
       label: What happened, and what did you expect?
-      placeholder: "e.g. Turning the dial in Scroll does nothing in Chrome"
+      placeholder: "e.g. Next scrolls in Edge but does nothing in Chrome"
     validations:
       required: true
   - type: textarea
     id: log
     attributes:
       label: Log (the last ~50 lines)
-      description: "Windows: tray icon → Open log. macOS: ~/.orbit/orbit.log. Android: copy from the setup screen."
+      description: "Windows: tray icon → Open log. macOS: ~/.orbit/orbit.log. Android: Help → Report a problem copies it."
       render: text

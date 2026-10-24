@@ -5,7 +5,7 @@ body:
   - type: textarea
     id: idea
     attributes:
-      label: What should the dial do, and where?
+      label: What should Orbit do, and with which buttons?
       placeholder: "e.g. A Figma tool: turn to zoom, press to fit"
     validations:
       required: true
