@@ -1,6 +1,6 @@
-MIT License
+Orbit License (MIT with attribution)
 
-Copyright (c) 2026 harsha20599
+Copyright (c) 2026 harsha20599 (Yemcube, https://www.instagram.com/yem.cube)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9,8 +9,21 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. The above copyright notice and this permission notice shall be included in
+   all copies or substantial portions of the Software.
+
+2. Attribution. If you share publicly anything that uses, includes or is based
+   on the Software, in whole or in part (for example an app, a fork, a modified
+   version, a product, a website, or a video, reel or post showing your work),
+   you must give clear and visible credit to the original author:
+
+       Based on Orbit by Yemcube (Instagram @yem.cube,
+       https://www.instagram.com/yem.cube)
+
+   The credit must appear where people will see it: in the app's About or
+   credits screen, the project's README or description, or the caption or
+   description of a video or post. Private use and changes you don't share
+   need no credit.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -19,6 +32,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Versions released before this license (up to and including v0.2.0) were
+published under the plain MIT License, which still applies to those copies.
 
 Third-party: icons from Lucide (ISC license, orbit/ui/icons/LICENSE-lucide.txt).
 Orbit is not affiliated with or endorsed by Nothing / CMF.

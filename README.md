@@ -4,8 +4,8 @@
 
 Open a wheel of tools, move to pick one, press to choose. Then your control drives that tool:
 scroll pages and reels, flip slides, scrub a video timeline, change brightness, switch apps,
-undo / redo, take a photo or a video, and more. Works on **Windows, macOS and Android**. Free
-and open source.
+undo / redo, take a photo or a video, and more. Works on **Windows, macOS and Android**. Free,
+with the source code here.
 
 **What can drive it:** the CMF Buds Pro 2 case dial (the original), any earbuds or headphones
 with buttons (AirPods, OnePlus, Galaxy, Pixel Buds…), wired earphones, Bluetooth speakers,
@@ -100,6 +100,13 @@ Optional extra functions: Open assistant, Previous tool, Custom command (desktop
 - **Can't find Orbit on Windows:** it lives in the system tray; click **^** by the clock.
   Starting Orbit again opens its Settings.
 - **Android: the Accessibility switch is greyed out:** App info → ⋮ → **Allow restricted settings**.
+
+## License
+
+Free to use, change and share under the [Orbit License](LICENSE): MIT, plus one rule. **If you
+share anything built on Orbit publicly** (an app, a fork, a video or post showing your work),
+**credit "Based on Orbit by Yemcube"** with a link to Instagram
+[@yem.cube](https://www.instagram.com/yem.cube). Private use needs no credit.
 
 ## Help and feedback
 
