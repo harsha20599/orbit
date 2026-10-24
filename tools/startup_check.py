@@ -25,10 +25,13 @@ def log_text():
     return log_file.read_text(encoding="utf-8", errors="replace") if log_file.exists() else ""
 
 
-def wait_for(needle, timeout):
+def wait_for(needles, timeout):
+    """True once any of the needles is in the log."""
+    needles = (needles,) if isinstance(needles, str) else needles
     end = time.time() + timeout
     while time.time() < end:
-        if needle in log_text():
+        text = log_text()
+        if any(n in text for n in needles):
             return True
         if proc.poll() is not None:
             return False
@@ -39,7 +42,8 @@ def wait_for(needle, timeout):
 ok = wait_for("Orbit running", 40)
 if ok:
     send("double")
-    ok = wait_for("double <dev-udp>", 10)
+    # 0.2+: the dial's double press goes through Controls (CMF preset: double = Open menu)
+    ok = wait_for(("double <dev-udp>", "open_wheel <controller:controls>"), 10)
     send("rotate", 1)
     ok = ok and wait_for("rotate(+1) <dev-udp>", 10)
     send("double")

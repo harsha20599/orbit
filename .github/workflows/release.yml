@@ -44,7 +44,7 @@ jobs:
           $log = Get-Content "$env:LOCALAPPDATA\Orbit\orbit.log" -Raw
           Stop-Process $p -Force
           $log
-          if ($log -notmatch "Orbit running" -or $log -notmatch "double <dev-udp>") { throw "packaged Orbit.exe did not start or handle input" }
+          if ($log -notmatch "Orbit running" -or $log -notmatch "double <dev-udp>|open_wheel <controller:controls>") { throw "packaged Orbit.exe did not start or handle input" }
       - name: Installer
         shell: pwsh
         run: |
