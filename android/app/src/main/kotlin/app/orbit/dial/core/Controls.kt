@@ -187,12 +187,16 @@ object Presets {
 }
 
 /** Turns one input's downs / ups into the presses in use. */
-class PressRecognizer(presses: Set<Press>, private var repeat: Boolean, private val emit: (Press) -> Unit) {
+class PressRecognizer(presses: Set<Press>, private var repeat: Boolean, private val emit: (Press) -> Unit,
+                      /** n presses no trigger used: the key should do its own job (see ControlsHub.replay) */
+                      private val unused: ((Int) -> Unit)? = null) {
     companion object {
         const val GAP_MS = 300L
         const val HOLD_MS = 500L
         const val REPEAT_DELAY_MS = 380L
         const val REPEAT_EVERY_MS = 110L
+        /** Held longer than this, the key-up was lost (screen off, a dialog took it): let go. */
+        const val MAX_HOLD_MS = 30_000L
     }
 
     var presses = presses; private set
@@ -224,8 +228,12 @@ class PressRecognizer(presses: Set<Press>, private var repeat: Boolean, private 
         if (taps >= maxTaps) flush()
     }
 
+    /** The key is no longer down, but its up never came: forget it without counting a tap. */
+    fun release() { downAt = null; taps = 0; firedOnDown = false; holdFired = false }
+
     fun tick(now: Long) {
         val d = downAt
+        if (d != null && now - d >= MAX_HOLD_MS) { release(); return }
         if (d != null) {
             if (firedOnDown) { if (repeat) while (now >= nextRepeat) { emit(Press.TAP); nextRepeat += REPEAT_EVERY_MS } }
             else if (Press.HOLD in presses && !holdFired && now - d >= HOLD_MS) { holdFired = true; taps = 0; emit(Press.HOLD) }
@@ -235,17 +243,22 @@ class PressRecognizer(presses: Set<Press>, private var repeat: Boolean, private 
     fun nextWake(): Long? {
         val d = downAt
         return when {
-            d != null && firedOnDown -> if (repeat) nextRepeat else null
+            d != null && firedOnDown -> if (repeat) nextRepeat else d + MAX_HOLD_MS
             d != null && Press.HOLD in presses && !holdFired -> d + HOLD_MS
+            d != null -> d + MAX_HOLD_MS
             d == null && taps > 0 -> lastUp + GAP_MS
             else -> null
         }
     }
 
     private fun flush() {
-        val p = when (taps) { 1 -> Press.TAP; 2 -> Press.DOUBLE; else -> Press.TRIPLE }
+        val n = taps
+        val p = when (n) { 1 -> Press.TAP; 2 -> Press.DOUBLE; else -> Press.TRIPLE }
         taps = 0
+        // a count nobody uses (double, when only tap and triple are set) is that many taps
         if (p in presses) emit(p)
+        else if (Press.TAP in presses) repeat(n) { emit(Press.TAP) }
+        else unused?.invoke(n)                            // only hold / double in use: a plain press is the key's own
     }
 }
 
@@ -263,10 +276,14 @@ class ControlsHub(private val emit: (DialEvent) -> Unit) {
     private class Slot(val device: String?, val input: String, val presses: Set<Press>, val repeat: Boolean,
                        val onPress: (Press) -> Unit) {
         val byDevice = HashMap<String?, PressRecognizer>()
-        fun r(dev: String?) = byDevice.getOrPut(dev) { PressRecognizer(presses, repeat, onPress) }
+        var unused: ((Int) -> Unit)? = null
+        fun r(dev: String?) = byDevice.getOrPut(dev) { PressRecognizer(presses, repeat, onPress, unused) }
     }
     private var slots: List<Slot> = emptyList()
     var controls = Controls(emptyList()); private set
+    /** (input, n): presses of a swallowed key that no trigger used, for the platform to
+     *  re-send (Volume + bound only to "hold": a tap still turns the volume up). */
+    var replay: ((String, Int) -> Unit)? = null
 
     fun set(c: Controls) {
         slots.forEach { s -> s.byDevice.values.forEach { it.reset() } }
@@ -276,6 +293,7 @@ class ControlsHub(private val emit: (DialEvent) -> Unit) {
             val presses = mine.map { it.trigger.press }.toSet()
             val moves = presses == setOf(Press.TAP) && mine.single().action in setOf(OrbitActions.FORWARD, OrbitActions.BACK)
             Slot(dev, input, presses, moves) { p -> mine.firstOrNull { it.trigger.press == p }?.let { emitAction(it.action, 1, null) } }
+                .also { s -> s.unused = { n -> replay?.invoke(input, n) } }
         }
     }
 
@@ -303,8 +321,37 @@ class ControlsHub(private val emit: (DialEvent) -> Unit) {
         emit(actionEvent(action, n, source ?: (CONTROLLER + "controls"), Clock.now()))
 
     fun tick(now: Long) = slots.forEach { s -> s.byDevice.values.forEach { it.tick(now) } }
+
+    /** Every key let go (screen off, Orbit off): nothing stays held or keeps repeating. */
+    fun releaseAll() = slots.forEach { s -> s.byDevice.values.forEach { it.release() } }
     fun nextWake(): Long? = slots.flatMap { it.byDevice.values }.mapNotNull { it.nextWake() }.minOrNull()
 
     /** Headphone volume drives Orbit (else volume stays volume). */
     fun volumeIsDial() = controls.uses("vol:")
+}
+
+/**
+ * Pairs each key's up with its down. A key swallowed on the way down is swallowed on the
+ * way up too, as the same input, whatever changed in between: Ctrl let go first (the up
+ * then reads "key:30", not "key:30+ctrl"), Orbit turned off, the controls saved. Without
+ * this the bound key would look held forever (and a Previous / Next would keep repeating).
+ */
+class KeyPairing {
+    private val held = HashMap<Pair<String, Int>, String>()
+
+    /** [handle] gets the input and down / up and says whether a control uses it. True = swallow. */
+    fun onKey(device: String, code: Int, input: String?, down: Boolean, handle: (String, Boolean) -> Boolean): Boolean {
+        val k = device to code
+        if (down) {
+            held[k]?.let { handle(it, true); return true }           // the OS's own repeat
+            if (input != null && handle(input, true)) { held[k] = input; return true }
+            return false
+        }
+        val was = held.remove(k) ?: return false
+        handle(was, false)
+        return true
+    }
+
+    fun clear() = held.clear()
+    val holding get() = held.isNotEmpty()
 }

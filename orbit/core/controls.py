@@ -27,6 +27,7 @@ Pure logic, no OS or Qt: the clock is injected, so it is all unit-testable.
 """
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from dataclasses import dataclass, field, replace
@@ -322,16 +323,19 @@ GAP_S = 0.300
 HOLD_S = 0.500
 REPEAT_DELAY_S = 0.380
 REPEAT_EVERY_S = 0.110
+MAX_HOLD_S = 30.0               # held longer, its key-up was lost (lock screen, sleep): let go
 _EPS = 1e-6                     # float clocks: a deadline reached is reached
 
 
 class PressRecognizer:
     """One input's downs / ups -> the presses in use."""
 
-    def __init__(self, presses: set[Press], repeat: bool, emit: Callable[[Press], None]):
+    def __init__(self, presses: set[Press], repeat: bool, emit: Callable[[Press], None],
+                 unused: Callable[[int], None] | None = None):
         self.presses = set(presses)
         self.repeat = repeat
         self.emit = emit
+        self.unused = unused          # n presses that no trigger used (the key should do its own job)
         self.reset()
 
     def reset(self):
@@ -371,8 +375,15 @@ class PressRecognizer:
         if self._taps >= self._max_taps:
             self._flush()
 
+    def release(self):
+        """The key is no longer down but its up never came: forget it, no tap counted."""
+        self.reset()
+
     def tick(self, now: float):
         d = self._down_at
+        if d is not None and now - d + _EPS >= MAX_HOLD_S:
+            self.release()
+            return
         if d is not None:
             if self._fired_on_down:
                 if self.repeat:
@@ -388,18 +399,26 @@ class PressRecognizer:
     def next_wake(self) -> float | None:
         d = self._down_at
         if d is not None and self._fired_on_down:
-            return self._next_repeat if self.repeat else None
+            return self._next_repeat if self.repeat else d + MAX_HOLD_S
         if d is not None and Press.HOLD in self.presses and not self._hold_fired:
             return d + HOLD_S
+        if d is not None:
+            return d + MAX_HOLD_S
         if d is None and self._taps:
             return self._last_up + GAP_S
         return None
 
     def _flush(self):
-        p = {1: Press.TAP, 2: Press.DOUBLE}.get(self._taps, Press.TRIPLE)
+        n = self._taps
+        p = {1: Press.TAP, 2: Press.DOUBLE}.get(n, Press.TRIPLE)
         self._taps = 0
         if p in self.presses:
             self.emit(p)
+        elif Press.TAP in self.presses:      # a count nobody uses (double, with only tap + triple) is n taps
+            for _ in range(n):
+                self.emit(Press.TAP)
+        elif self.unused:                   # only hold / double in use: a plain press is the key's own
+            self.unused(n)
 
 
 def action_event(action: str, n: int, source: str, t: float) -> InputEvent:
@@ -420,6 +439,10 @@ class ControlsHub:
     def __init__(self, emit: Callable[[InputEvent], None], clock: Callable[[], float] = time.monotonic):
         self.emit = emit
         self.clock = clock
+        # (input, n): presses of a swallowed key that no trigger used; the platform re-sends
+        # them so the key still does its usual job (Volume + bound only to "hold": a tap
+        # still turns the volume up). See replay_with().
+        self.replay: Callable[[str, int], None] | None = None
         self._lock = threading.RLock()
         self.controls = Controls()
         self._slots: dict[str, PressRecognizer] = {}
@@ -437,7 +460,10 @@ class ControlsHub:
                     a = self.controls.action_for(Trigger(inp, p))
                     if a:
                         self._emit(a, 1, None)
-                self._slots[inp] = PressRecognizer(presses, moves, fire)
+                def unused(n, inp=inp):
+                    if self.replay:
+                        self.replay(inp, n)
+                self._slots[inp] = PressRecognizer(presses, moves, fire, unused)
 
     def has(self, inp: str) -> bool:
         """A control uses this key / button (the platform should swallow it)."""
@@ -472,6 +498,12 @@ class ControlsHub:
             for r in list(self._slots.values()):
                 r.tick(now)
 
+    def release_all(self):
+        """Every key let go (sleep, lock, Orbit off): nothing stays held or repeats."""
+        with self._lock:
+            for r in self._slots.values():
+                r.release()
+
     def next_wake(self) -> float | None:
         with self._lock:
             ws = [w for w in (r.next_wake() for r in self._slots.values()) if w is not None]
@@ -479,6 +511,30 @@ class ControlsHub:
 
     def volume_is_dial(self) -> bool:
         return self.controls.uses("vol:")
+
+
+_MEDIA_KEYS = {"playpause": "play_pause", "nexttrack": "next", "prevtrack": "previous"}
+
+
+def replay_with(out) -> Callable[[str, int], None]:
+    """A ControlsHub.replay that re-sends a key through the platform's output (tagged as
+    Orbit's own, so the hooks let it through). Off the hook thread: it must stay fast."""
+    def send(inp: str, n: int):
+        if not inp.startswith("key:"):
+            return                                   # mouse buttons: nothing sensible to re-send
+        name = inp[4:].split("+")[-1]                # modifiers are still physically held
+        try:
+            if name in ("volumeup", "volumedown"):
+                out.volume_step(n if name == "volumeup" else -n)
+            elif name in _MEDIA_KEYS:
+                for _ in range(n):
+                    out.media(_MEDIA_KEYS[name])
+            else:
+                for _ in range(n):
+                    out.keys(name)
+        except Exception:
+            logging.getLogger("orbit.controls").exception("re-sending %s", inp)
+    return lambda inp, n: threading.Thread(target=send, args=(inp, n), name="replay", daemon=True).start()
 
 
 # ---------------------------------------------------------------- router

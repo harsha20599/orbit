@@ -90,7 +90,9 @@ class ScrollNotches:
     def __init__(self):
         self.acc: dict[str, float] = {}
 
-    def feed(self, vertical: float, horizontal: float, mods: set[str]) -> tuple[str | None, int]:
+    def feed(self, vertical: float, horizontal: float, mods: set[str], momentum: bool = False) -> tuple[str | None, int]:
+        """momentum: macOS's coasting after a trackpad flick (fingers already lifted). Still
+        the input (so it is swallowed, not zooming the page) but no more steps."""
         if vertical:
             d, amount = ("up" if vertical > 0 else "down"), abs(vertical)
         elif horizontal:
@@ -100,6 +102,9 @@ class ScrollNotches:
         inp = scroll_input(d, mods)
         if inp is None:
             return None, 0
+        if momentum:
+            self.acc = {}
+            return inp, 0
         total = self.acc.get(inp, 0.0) + amount
         n = int(total + 1e-9)
         self.acc = {inp: total - n}
@@ -121,6 +126,12 @@ class TapTracker:
     def mouse(self, button: int, down: bool) -> bool:
         inp = mouse_name(button)
         return self._button(inp, inp, down) if inp else False
+
+    def release_all(self):
+        """Forget every swallowed key (Secure Input, permission lost, wake): their ups may never come."""
+        for inp in self._swallowed.values():
+            self.key_cb(inp, False)
+        self._swallowed.clear()
 
     def _button(self, ident: str, inp: str, down: bool) -> bool:
         if down:

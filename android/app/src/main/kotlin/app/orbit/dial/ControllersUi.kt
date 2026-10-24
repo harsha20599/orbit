@@ -534,7 +534,7 @@ private fun Recorder(onUse: (Trigger) -> Unit) {
             c.counted -> if (c.down) got = c.trigger(Press.TAP)
             first == null || first.input != c.input -> if (c.down) {
                 input = c
-                rec.value = PressRecognizer(Press.entries.toSet(), false) { p -> got = c.trigger(p) }.also { it.down(Clock.now()) }
+                rec.value = PressRecognizer(Press.entries.toSet(), false, emit = { p -> got = c.trigger(p) }).also { it.down(Clock.now()) }
             }
             c.down -> rec.value?.down(Clock.now())
             else -> rec.value?.up(Clock.now())

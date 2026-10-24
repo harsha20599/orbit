@@ -7,9 +7,19 @@ Volume Up bound, then sends a, b, c, Ctrl+Space, Space, a forward click, Ctrl+sc
 a plain scroll, and Volume Up twice: once untagged (how Windows injects a Bluetooth
 keyboard knob's keys) and once tagged as Orbit's own output.
 
-Expected: past Orbit = a, c, space, the plain scroll and the tagged Volume Up (+ the ctrl
-presses themselves); Orbit's router got b, Ctrl+Space, forward, Ctrl+scroll and the
-untagged Volume Up; nothing else.
+Then: F14 bound to "hold" is held 0.8 s (past several 250 ms sweeps: it must still fire
+as a hold, not be let go early); Win+F15 is bound and pressed (Orbit must send its
+0xE8 mask key so the Win release doesn't open Start). (AltGr's fake Ctrl can't be
+faked with SendInput: tests/test_trigger_edges.py covers it.)
+
+Last, the watchdog: Orbit's hooks are removed behind its back (what Windows does to a
+slow hook, silently); typing goes on; within a few seconds Orbit must notice and put
+them back, and "b" must be caught again.
+
+Expected: past Orbit = a, c, space, the plain scroll, the tagged Volume Up, the Win
+presses with the 0xE8 mask (+ the ctrl presses);
+Orbit's router got b, Ctrl+Space, forward, Ctrl+scroll, the untagged Volume Up, the
+F14 hold and Win+F15; nothing else.
 
     python tools/key_capture_check.py
 """
@@ -20,7 +30,7 @@ import time
 from ctypes import wintypes
 
 sys.path.insert(0, ".")
-from orbit.core.controls import Binding, Controls, Router, Trigger  # noqa: E402
+from orbit.core.controls import Binding, Controls, Press, Router, Trigger  # noqa: E402
 from orbit.platform.windows import input_keys as ik  # noqa: E402
 from orbit.platform.windows.keynames import ORBIT_TAG, VK_NAMES, mouse_input  # noqa: E402
 
@@ -82,9 +92,9 @@ def send(*inputs):
     time.sleep(0.03)
 
 
-def key(vk, up=False, extra=0):
+def key(vk, up=False, extra=0, scan=0):
     i = INPUT(type=1)
-    i.ki = KEYBDINPUT(vk, 0, 0x2 if up else 0, 0, extra)
+    i.ki = KEYBDINPUT(vk, scan, 0x2 if up else 0, 0, extra)
     return i
 
 
@@ -109,7 +119,9 @@ posted = []
 r = Router(posted.append, lambda m: None)
 r.set_controls(Controls((Binding("forward", Trigger("key:b")), Binding("open_wheel", Trigger("key:ctrl+space")),
                          Binding("back", Trigger("mouse:forward")), Binding("select", Trigger("scroll:ctrl+up")),
-                         Binding("forward", Trigger("key:volumeup")))))
+                         Binding("forward", Trigger("key:volumeup")),
+                         Binding("open_wheel", Trigger("key:f14", Press.HOLD)),
+                         Binding("select", Trigger("key:win+f15")))))
 cap = ik.WindowsKeyCapture(r)            # SendInput here is injected but untagged, like a BT knob
 cap.start()
 time.sleep(0.2)
@@ -126,16 +138,40 @@ send(wheel(120))                                             # plain scroll: pas
 VOLUP = 0xAF
 send(key(VOLUP), key(VOLUP, True))                           # untagged (BT knob): ours
 send(key(VOLUP, extra=ORBIT_TAG), key(VOLUP, True, extra=ORBIT_TAG))   # Orbit's own: passes
+F14, F15, LWIN = 0x7D, 0x7E, 0x5B
+send(key(F14))                                               # held past several sweeps
+for _ in range(80):
+    time.sleep(0.01)
+    r.hub.tick()
+send(key(F14, True))
+send(key(LWIN), key(F15), key(F15, True), key(LWIN, True))   # Win+F15: ours, with the mask
 time.sleep(0.3)
 ms = (time.perf_counter() - t0) * 1000
+
+# watchdog: pull Orbit's hooks out from under it, keep "typing", wait for it to notice
+for h in list(cap._hooks):
+    user32.UnhookWindowsHookEx(h)
+dead_at = time.perf_counter()
+cut = len(posted)
+while cap.reinstalls == 0 and time.perf_counter() - dead_at < 8:
+    send(key(A), key(A, True))                                 # input Windows sees, Orbit's hooks don't
+    time.sleep(0.2)
+noticed = time.perf_counter() - dead_at
+time.sleep(0.2)
+send(key(B), key(B, True))                                   # caught again?
+time.sleep(0.3)
+after = [(e.kind.value, e.delta, e.action) for e in posted[cut:]]
+watchdog_ok = cap.reinstalls >= 1 and after == [("rotate", 1, None)]
+print(f"watchdog:   hooks back after {noticed:.1f} s, then router got {after}")
 
 cap.stop()
 user32.PostThreadMessageW(rec.native_id, 0x12, 0, 0)
 got = [(e.kind.value, e.delta, e.action) for e in posted]
-want_past = ["a", "c", hex(CTRL), "space", hex(CTRL), "wheel", "volumeup"]
-past = [p if p != "ctrl" else hex(CTRL) for p in passed]
-ok = past == want_past and got == [("rotate", 1, None), ("action", 0, "open_wheel"), ("rotate", -1, None),
-                                                                                         ("click", 0, "select"), ("rotate", 1, None)]
+want_past = ["a", "c", hex(CTRL), "space", hex(CTRL), "wheel", "volumeup", hex(LWIN), "0xe8"]
+past = passed[:len(want_past)]                                # then the watchdog phase's filler a's
+ok = watchdog_ok and past == want_past and got[:len(got) - len(after)] == [("rotate", 1, None), ("action", 0, "open_wheel"), ("rotate", -1, None),
+                                                                                         ("click", 0, "select"), ("rotate", 1, None),
+                                                                                         ("action", 0, "open_wheel"), ("click", 0, "select")]
 print(f"past Orbit: {past}\nrouter:     {got}\n{ms:.0f} ms")
 print("PASS" if ok else "FAIL")
 sys.exit(0 if ok else 1)

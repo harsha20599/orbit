@@ -79,12 +79,16 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
         }
         Orbit.onMotionNeed = { main.post { updateBackTap() } }
         screenRx = object : android.content.BroadcastReceiver() {
-            override fun onReceive(c: android.content.Context, i: Intent) { updateBackTap() }
+            override fun onReceive(c: android.content.Context, i: Intent) {
+                if (i.action == Intent.ACTION_SCREEN_OFF) Orbit.releaseKeys()       // their ups won't come
+                updateBackTap()
+            }
         }.also {
             registerReceiver(it, android.content.IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_ON); addAction(Intent.ACTION_SCREEN_OFF)
             })
         }
+        Orbit.hub.replay = { input, n -> main.post { replayKey(input, n) } }
         Orbit.reloadControls(this)
         controlsListener = ControllerStore.listen(this) { main.post { Orbit.reloadControls(this) } }
         scope.launch { Orbit.events.collect { ev -> engine.handle(ev) } }
@@ -155,7 +159,10 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
                     typing = dev?.keyboardType == android.view.InputDevice.KEYBOARD_TYPE_ALPHABETIC))
             return true
         }
-        if (input != null && Orbit.enabled(this) && Orbit.key(ControllerStore.deviceId(dev), input, down)) return true
+        val devId = ControllerStore.deviceId(dev)
+        // a down only counts while Orbit is on; its up is always paired with it
+        val on = !down || Orbit.enabled(this)
+        if (on && Orbit.pairing.onKey(devId, code, input, down) { inp, d -> Orbit.key(devId, inp, d) }) return true
         if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN) {
             Orbit.lastPhoneVolumeKey = Clock.now()      // not the dial: don't read that volume change as a turn
         }
@@ -163,6 +170,25 @@ class OrbitAccessibilityService : AccessibilityService(), Actions {
     }
 
     private var controlsListener: android.content.SharedPreferences.OnSharedPreferenceChangeListener? = null
+
+    /** A swallowed key no trigger used does what it would have done. An accessibility service
+     *  can't inject keys, so only volume (through AudioManager, like the key itself). */
+    private fun replayKey(input: String, n: Int) {
+        val code = input.removePrefix("key:").substringBefore("+").toIntOrNull() ?: return
+        val am = getSystemService(android.media.AudioManager::class.java)
+        if (code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN)
+            Orbit.lastPhoneVolumeKey = Clock.now()       // ours, not the dial: don't read it as a turn
+        repeat(n) {
+            when (code) {
+                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN ->
+                    am.adjustSuggestedStreamVolume(
+                        if (code == KeyEvent.KEYCODE_VOLUME_UP) android.media.AudioManager.ADJUST_RAISE else android.media.AudioManager.ADJUST_LOWER,
+                        android.media.AudioManager.USE_DEFAULT_STREAM_TYPE, android.media.AudioManager.FLAG_SHOW_UI)
+                else -> return              // media keys would loop back into Orbit's own media session
+            }
+        }
+        Orbit.log("re-sent $input x$n (no trigger used it)")
+    }
 
     // ---- motion triggers (back taps, chop, twist): sensors run only while the screen is
     // on and a control (or the setup screen's test) uses them

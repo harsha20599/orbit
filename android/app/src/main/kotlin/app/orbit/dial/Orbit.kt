@@ -69,6 +69,15 @@ object Orbit {
         return r
     }
 
+    val pairing = app.orbit.dial.core.KeyPairing()
+
+    /** Screen off / Orbit off: key-ups may never come, so let every key go. */
+    fun releaseKeys() {
+        pairing.clear()
+        hub.releaseAll()
+        scheduleHub()
+    }
+
     // ---- back taps: Orbit's own detector (any phone) and the phone's (Pixel / Samsung)
     // can both fire for one gesture; the second within a moment is the same tap.
     @Volatile var motionTesting = false

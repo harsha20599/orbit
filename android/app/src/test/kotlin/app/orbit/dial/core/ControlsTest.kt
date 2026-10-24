@@ -13,7 +13,7 @@ class ControlsTest {
 
     @Before fun clock() { Clock.now = { now } }
 
-    private fun rec(vararg p: Press, repeat: Boolean = false) = PressRecognizer(p.toSet(), repeat) { got += it }
+    private fun rec(vararg p: Press, repeat: Boolean = false) = PressRecognizer(p.toSet(), repeat, emit = { got += it })
 
     private fun PressRecognizer.press(ms: Long = 60, gap: Long = 0) {
         down(now); repeat((ms / 10).toInt()) { now += 10; tick(now) }; up(now)

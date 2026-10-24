@@ -36,8 +36,18 @@ ORBIT_TAG = 0x0B17D1A1
 
 def own_event(extra_info: int) -> bool:
     return extra_info == ORBIT_TAG
+
+
+def altgr_fake_ctrl(vk: int, scan: int) -> bool:
+    """AltGr reaches the hook as a fake left Ctrl (scan code 0x21D), then right Alt. That
+    Ctrl isn't a Ctrl press: counting it would turn AltGr+b into Ctrl+Alt+b."""
+    return vk == 0xA2 and scan == 0x21D
 WM_MBUTTONDOWN, WM_MBUTTONUP, WM_XBUTTONDOWN, WM_XBUTTONUP = 0x0207, 0x0208, 0x020B, 0x020C
 WM_MOUSEWHEEL, WM_MOUSEHWHEEL = 0x020A, 0x020E
+# sent (tagged) when Orbit swallows a key while Win or Alt is held, so Windows doesn't
+# take the Win / Alt release as a press on its own (Start menu, an app's menu bar).
+# 0xE8 is unassigned (AutoHotkey's "menu mask key" does the same).
+MASK_VK = 0xE8
 WHEEL_DELTA = 120
 
 
@@ -76,11 +86,14 @@ class KeyTracker:
     in between (modifiers released, Orbit turned off, settings saved)."""
 
     def __init__(self, wants: Callable[[str], bool], key: Callable[[str, bool], bool],
-                 wants_gesture: Callable[[str], bool] | None = None, gesture: Callable[[str], bool] | None = None):
+                 wants_gesture: Callable[[str], bool] | None = None, gesture: Callable[[str], bool] | None = None,
+                 is_down: Callable[[int], bool] | None = None, mask: Callable[[], None] | None = None):
         self.wants = wants
         self.key = key
         self.wants_gesture = wants_gesture or (lambda inp: False)
         self.gesture = gesture or (lambda inp: False)
+        self.is_down = is_down        # asks Windows whether a virtual key is down now (GetAsyncKeyState)
+        self.mask = mask or (lambda: None)
         self._wheel: dict[str, int] = {}               # partial notches (precision touchpads scroll in small steps)
         self.held: set[str] = set()
         self._held_vks: dict[int, str] = {}
@@ -97,7 +110,34 @@ class KeyTracker:
         name = VK_NAMES.get(vk)
         if name is None:
             return False
-        return self._button(vk, key_input(name, self.held), down)
+        swallowed = self._button(vk, key_input(name, self.held), down)
+        if swallowed and down and self.held & {"win", "alt"}:
+            self.mask()
+        return swallowed
+
+    def _prune_mods(self):
+        """Drop modifiers whose key-up we never saw (Win+L: the lock screen takes the Win
+        up), else every key after would read as Win+key."""
+        if self.is_down and self._held_vks:
+            for vk in [v for v in self._held_vks if not self.is_down(v)]:
+                del self._held_vks[vk]
+            self.held = set(self._held_vks.values())
+
+    def sweep(self):
+        """Drop modifiers Windows says are up (their up was lost: Win+L, a UAC prompt).
+        Only modifiers: Orbit never swallows them, so Windows' key state is right for them.
+        A key Orbit swallowed is never down as far as Windows knows, so a lost key-up of
+        one is handled by release_all (lock, resume) and the press's own time limit."""
+        self._prune_mods()
+
+    def release_all(self):
+        """Forget every held key and modifier (session locked / unlocked, resumed from sleep)."""
+        for inp in self._swallowed.values():
+            self.key(inp, False)
+        self._swallowed.clear()
+        self._held_vks.clear()
+        self.held = set()
+        self._wheel.clear()
 
     def mouse(self, msg: int, mouse_data: int) -> bool:
         if msg in (WM_MOUSEWHEEL, WM_MOUSEHWHEEL):

@@ -35,6 +35,7 @@ HidP_Input = 0
 PAGE_GENERIC, PAGE_DIGITIZER = 0x01, 0x0D
 U_X, U_Y = 0x30, 0x31
 U_TIP, U_CONTACT_ID, U_CONTACT_COUNT, U_FINGER = 0x42, 0x51, 0x54, 0x22
+U_CONFIDENCE = 0x47       # set for a finger, clear for a palm / something too big
 
 
 class RAWINPUTDEVICE(ctypes.Structure):
@@ -122,17 +123,25 @@ class _Device:
         self.fingers.sort()
         self.contacts: dict[int, tuple[float, float]] = {}
         self.remaining = 0
+        self.confidence = False       # this pad reports Confidence (Precision Touchpads must)
 
     def _value(self, link: int, page: int, usage: int, report, size) -> int | None:
         v = wintypes.ULONG()
         r = hid.HidP_GetUsageValue(HidP_Input, page, link, usage, ctypes.byref(v), self.pp, report, size)
         return v.value if r == HIDP_STATUS_SUCCESS else None
 
-    def _tip(self, link: int, report, size) -> bool:
+    def _buttons(self, link: int, report, size) -> set[int]:
         usages = (wintypes.USHORT * 16)()
         n = wintypes.ULONG(16)
         r = hid.HidP_GetUsages(HidP_Input, PAGE_DIGITIZER, link, usages, ctypes.byref(n), self.pp, report, size)
-        return r == HIDP_STATUS_SUCCESS and U_TIP in usages[:n.value]
+        return set(usages[:n.value]) if r == HIDP_STATUS_SUCCESS else set()
+
+    def finger_down(self, buttons: set[int]) -> bool:
+        """Touching, and a finger: a contact without Confidence is a palm (once the pad has
+        shown it reports Confidence at all; some cheap pads never do)."""
+        if U_CONFIDENCE in buttons:
+            self.confidence = True
+        return U_TIP in buttons and (U_CONFIDENCE in buttons or not self.confidence)
 
     def report(self, report, size) -> dict[int, tuple[float, float]]:
         count = self._value(0, PAGE_DIGITIZER, U_CONTACT_COUNT, report, size) if self.has_count else None
@@ -145,7 +154,7 @@ class _Device:
             cid = self._value(link, PAGE_DIGITIZER, U_CONTACT_ID, report, size)
             if cid is None:
                 continue
-            if not self._tip(link, report, size):
+            if not self.finger_down(self._buttons(link, report, size)):
                 self.contacts.pop(cid, None)
                 continue
             x = self._value(link, PAGE_GENERIC, U_X, report, size)

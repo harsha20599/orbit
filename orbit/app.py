@@ -189,8 +189,9 @@ def main(argv=None):
     bus = Bus()
     # Every input goes through the controls router: the buds' sources here, keyboard /
     # mouse hooks below. It turns them into the functions the user set up.
-    from orbit.core.controls import Controls, Router
+    from orbit.core.controls import Controls, Router, replay_with
     router = Router(bus.post, out.media)
+    router.hub.replay = replay_with(out)
     router.set_controls(Controls.from_json(settings_now.get("controls")))
 
     def post(ev: InputEvent):

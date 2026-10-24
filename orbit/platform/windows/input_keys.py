@@ -11,6 +11,17 @@ keyboard's volume knob), and those are controls like any key.
 Low-level hooks see every key from every keyboard, so a key is a control whichever
 keyboard it comes from. Windows drops a hook whose callback is slow, so the callback
 only does a dictionary lookup and posts to the router.
+
+Keeping it working (what AutoHotkey and PowerToys learned the hard way):
+  - Windows removes a slow hook without telling anyone. A watchdog compares the last
+    input Windows saw (GetLastInputInfo) with the last one the hooks saw, and puts the
+    hooks back when they have gone quiet while input kept coming. The hook thread runs
+    at time-critical priority so it is rarely slow in the first place.
+  - The lock screen, UAC prompts and sleep eat key-ups. Every SWEEP_MS the modifiers
+    Orbit thinks are held are checked against Windows' own key state; on lock / unlock
+    and resume everything is let go and the hooks are put back.
+  - Swallowing a key while Win or Alt is held would make Windows treat the Win / Alt
+    release as a press on its own (Start menu, menu bar): a tagged dummy key goes out.
 """
 from __future__ import annotations
 
@@ -19,12 +30,19 @@ import logging
 import threading
 from ctypes import wintypes
 
-from orbit.platform.windows.keynames import WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP, KeyTracker, own_event
+from orbit.platform.windows.keynames import (MASK_VK, ORBIT_TAG, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+                                             KeyTracker, altgr_fake_ctrl, own_event)
 
 log = logging.getLogger("orbit.keys")
 
 WH_KEYBOARD_LL, WH_MOUSE_LL = 13, 14
 WM_QUIT = 0x0012
+WM_TIMER, WM_WTSSESSION_CHANGE, WM_POWERBROADCAST = 0x0113, 0x02B1, 0x0218
+WM_APP_MASK = 0x8001
+WTS_SESSION_LOCK, WTS_SESSION_UNLOCK = 0x7, 0x8
+PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC = 0x7, 0x12
+SWEEP_MS = 250
+QUIET_MS = 2000             # hooks saw nothing this long while Windows got input: they're gone
 
 user32 = ctypes.WinDLL("user32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -64,13 +82,64 @@ user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM,
 user32.CallNextHookEx.restype = ctypes.c_ssize_t
 user32.UnhookWindowsHookEx.argtypes = [wintypes.HHOOK]
 kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+user32.GetAsyncKeyState.restype = ctypes.c_short
+user32.SetTimer.argtypes = [wintypes.HWND, ctypes.c_size_t, wintypes.UINT, ctypes.c_void_p]
+user32.SetTimer.restype = ctypes.c_size_t
+kernel32.GetTickCount.restype = wintypes.DWORD
+kernel32.GetCurrentThread.restype = wintypes.HANDLE
+kernel32.SetThreadPriority.argtypes = [wintypes.HANDLE, ctypes.c_int]
+
+
+class LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
+
+class _KI(ctypes.Structure):
+    _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD), ("dwFlags", wintypes.DWORD),
+                ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+
+class _INPUT(ctypes.Structure):
+    class _U(ctypes.Union):
+        _fields_ = [("ki", _KI), ("pad", ctypes.c_byte * 32)]
+    _anonymous_ = ("u",)
+    _fields_ = [("type", wintypes.DWORD), ("u", _U)]
+
+
+def _is_down(vk: int) -> bool:
+    return bool(user32.GetAsyncKeyState(vk) & 0x8000)
+
+
+def _send_mask():
+    keys = (_INPUT * 2)()
+    for i, flags in enumerate((0, 2)):
+        keys[i].type = 1
+        keys[i].ki = _KI(MASK_VK, 0, flags, 0, ORBIT_TAG)
+    user32.SendInput(2, keys, ctypes.sizeof(_INPUT))
+
+
+def _last_input_tick() -> int:
+    li = LASTINPUTINFO(ctypes.sizeof(LASTINPUTINFO), 0)
+    user32.GetLastInputInfo(ctypes.byref(li))
+    return li.dwTime
+
+
+def hooks_quiet(last_input: int, seen: int) -> bool:
+    """Windows got input QUIET_MS after the hooks last saw any (tick counts wrap)."""
+    gap = (last_input - seen) & 0xFFFFFFFF
+    return QUIET_MS < gap < 0x80000000
 
 
 class WindowsKeyCapture:
     def __init__(self, router, accept_injected: bool = False):
         self.router = router
         self.accept_injected = accept_injected        # tools/key_capture_check.py only: also take Orbit's own events
-        self.tracker = KeyTracker(router.wants, router.key, router.wants_gesture, router.gesture)
+        self.tracker = KeyTracker(router.wants, router.key, router.wants_gesture, router.gesture,
+                                  is_down=_is_down, mask=self._post_mask)
+        self._seen = 0                 # tick when a hook last saw any input
+        self._reinstalled = 0
+        self.reinstalls = 0
         self.touchpad = None
         self._thread: threading.Thread | None = None
         self._tid = 0
@@ -93,8 +162,10 @@ class WindowsKeyCapture:
         if self._tid:
             user32.PostThreadMessageW(self._tid, WM_QUIT, 0, 0)
 
-    def _run(self):
-        self._tid = kernel32.GetCurrentThreadId()
+    def _install(self):
+        for h in self._hooks:
+            user32.UnhookWindowsHookEx(h)
+        self._hooks.clear()
         mod = kernel32.GetModuleHandleW(None)
         for kind, proc in ((WH_KEYBOARD_LL, self._kb), (WH_MOUSE_LL, self._ms)):
             h = user32.SetWindowsHookExW(kind, proc, mod, 0)
@@ -102,15 +173,58 @@ class WindowsKeyCapture:
                 self._hooks.append(h)
             else:
                 log.error("hook %d failed (err %d)", kind, ctypes.get_last_error())
+        self._seen = kernel32.GetTickCount()
+
+    def _reinstall(self, why: str):
+        self.reinstalls += 1
+        self._reinstalled = kernel32.GetTickCount()
+        self.release_all()
+        self._install()
+        log.info("key capture: hooks put back (%s)", why)
+
+    def release_all(self):
+        self.tracker.release_all()
+        self.router.hub.release_all()
+
+    def _post_mask(self):
+        user32.PostThreadMessageW(self._tid, WM_APP_MASK, 0, 0)
+
+    def _run(self):
+        self._tid = kernel32.GetCurrentThreadId()
+        kernel32.SetThreadPriority(kernel32.GetCurrentThread(), 15)       # THREAD_PRIORITY_TIME_CRITICAL
+        self._install()
         self._touchpad_window()
         self._ready.set()
         msg = wintypes.MSG()
         while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            if msg.message == WM_APP_MASK and not msg.hWnd:
+                _send_mask()
+                continue
             user32.TranslateMessage(ctypes.byref(msg))
             user32.DispatchMessageW(ctypes.byref(msg))
         for h in self._hooks:
             user32.UnhookWindowsHookEx(h)
         self._hooks.clear()
+
+    def _check(self):
+        """Every SWEEP_MS on the hook thread: drop stale modifiers; put the hooks back if
+        Windows dropped them."""
+        try:
+            self.tracker.sweep()
+            now = kernel32.GetTickCount()
+            if (self._hooks and hooks_quiet(_last_input_tick(), self._seen)
+                    and (now - self._reinstalled) & 0xFFFFFFFF > 10_000):
+                self._reinstall("Windows had dropped them")
+        except Exception:
+            log.exception("key capture check")
+
+    def _on_session(self, msg, wp):
+        if msg == WM_WTSSESSION_CHANGE and wp in (WTS_SESSION_LOCK, WTS_SESSION_UNLOCK):
+            self.release_all()
+            if wp == WTS_SESSION_UNLOCK:
+                self._reinstall("unlocked")
+        elif msg == WM_POWERBROADCAST and wp in (PBT_APMRESUMESUSPEND, PBT_APMRESUMEAUTOMATIC):
+            self._reinstall("resumed")
 
     def _touchpad_window(self):
         """A message-only window on this thread, for the touchpad's Raw Input."""
@@ -119,6 +233,11 @@ class WindowsKeyCapture:
             self.touchpad = TouchpadReader(lambda g: self.router.gesture(g))
 
             def proc(hwnd, msg, wp, lp):
+                if msg == WM_TIMER:
+                    self._check()
+                    return 0
+                if msg in (WM_WTSSESSION_CHANGE, WM_POWERBROADCAST):
+                    self._on_session(msg, wp)
                 if msg == WM_INPUT:
                     try:
                         self.touchpad.on_input(lp)
@@ -135,6 +254,11 @@ class WindowsKeyCapture:
                                           wc.hInstance, None)
             if hwnd:
                 self.touchpad.register(hwnd)
+                user32.SetTimer(hwnd, 1, SWEEP_MS, None)
+                try:
+                    ctypes.WinDLL("wtsapi32").WTSRegisterSessionNotification(hwnd, 0)   # this session only
+                except Exception:
+                    log.exception("session notifications")
         except Exception:
             log.exception("touchpad gestures unavailable")
             self.touchpad = None
@@ -142,6 +266,9 @@ class WindowsKeyCapture:
     def _on_key(self, code, wparam, lparam):
         if code == 0:
             kb = KBDLLHOOKSTRUCT.from_address(lparam)
+            self._seen = kb.time
+            if altgr_fake_ctrl(kb.vkCode, kb.scanCode):
+                return user32.CallNextHookEx(None, code, wparam, lparam)      # AltGr's fake Ctrl: not a Ctrl press
             if (self.accept_injected or not own_event(kb.dwExtraInfo)) and wparam in (WM_KEYDOWN, WM_SYSKEYDOWN, WM_KEYUP, WM_SYSKEYUP):
                 try:
                     if self.tracker.keyboard(kb.vkCode, wparam in (WM_KEYDOWN, WM_SYSKEYDOWN)):
@@ -153,6 +280,7 @@ class WindowsKeyCapture:
     def _on_mouse(self, code, wparam, lparam):
         if code == 0:
             ms = MSLLHOOKSTRUCT.from_address(lparam)
+            self._seen = ms.time
             if self.accept_injected or not own_event(ms.dwExtraInfo):
                 try:
                     if self.tracker.mouse(wparam, ms.mouseData):
