@@ -24,7 +24,9 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.orbit.dial"
+        // the Play Store build is its own app (com.littyl.orbit, Play-managed signing); sideloaded
+        // builds stay app.orbit.dial. The code keeps the app.orbit.dial namespace either way.
+        applicationId = System.getenv("ORBIT_APP_ID") ?: "app.orbit.dial"
         minSdk = 26
         targetSdk = 36
         versionCode = (System.getenv("ORBIT_VERSION_CODE") ?: "1").toInt()
